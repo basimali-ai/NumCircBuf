@@ -1,0 +1,36 @@
+name: Upload to PyPi
+
+permissions:
+  contents: read
+  id-token: write
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload_pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - name: Download artifacts from build workflow
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: build_wheels.yml
+          branch: main
+          workflow_conclusion: success
+          name: cibw-.*
+          name_is_regexp: true
+          path: dist
+          if_no_artifact_found: error
+
+      - name: Flatten directory structure
+        run: |
+          mkdir -p final_dist
+          find dist -type f \( -name "*.whl" -o -name "*.tar.gz" \) -exec mv -v {} final_dist/ \;
+          ls -R final_dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: final_dist/

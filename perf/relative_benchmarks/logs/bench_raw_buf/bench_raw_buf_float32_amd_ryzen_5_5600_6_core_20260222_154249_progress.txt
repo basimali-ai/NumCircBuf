@@ -1,0 +1,20 @@
+Logging started at 2026-02-22 15:42:49.874640
+================================================================================
+[2026-02-22 15:42:49] 
+Generating data for:
+  max(BLOCK_SIZE): 524_288
+  max(MAXLEN): 524_288
+  n_runs: 8_445
+
+[2026-02-22 15:43:07] Total tasks: 306
+[2026-02-22 15:43:07] Creating ProcessPoolExecutor...
+[2026-02-22 15:43:07] Executor created, submitting futures...
+[2026-02-22 15:43:07] All 306 tasks submitted, 0 already completed
+[2026-02-22 15:43:07] Waiting for 306 remaining tasks...
+[2026-02-22 15:44:36] Exited as_completed() loop
+[2026-02-22 15:44:36] Executor closed
+[2026-02-22 15:44:36] 
+--- Benchmark Summary ---
+[2026-02-22 15:44:36] Max single task time: 95_690ns
+[2026-02-22 15:44:36] Average task time: 2_654ns
+[2026-02-22 15:44:36] Total time taken for data generation + benchmark: 106.24s

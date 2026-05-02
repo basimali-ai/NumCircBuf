@@ -1,0 +1,111 @@
+# Copyright 2026 Syed Basim Ali
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# cython: language_level=3
+# cython: boundscheck=False, wraparound=False
+# cython: initializedcheck=False, cdivision=True
+# cython: language=c++
+
+# - language_level: Use Python X semantics.
+# - boundscheck: Index bounds checking on sequences.
+# - wraparound: Controls support for negative indexing.
+# - initializedcheck: Checks whether variables have been assigned a value before use.
+# - cdivision: Use C division behavior.
+
+cdef extern from *:
+    """
+    /* -----------------------------------------------------------------------------
+     * Copyright 2026 Syed Basim Ali
+     *
+     * Licensed under the Apache License, Version 2.0 (the "License");
+     * you may not use this file except in compliance with the License.
+     * You may obtain a copy of the License at
+     *
+     *     http://www.apache.org/licenses/LICENSE-2.0
+     *
+     * Unless required by applicable law or agreed to in writing, software
+     * distributed under the License is distributed on an "AS IS" BASIS,
+     * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     * See the License for the specific language governing permissions and
+     * limitations under the License.
+     * ----------------------------------------------------------------------------- */
+    """
+
+{{py:
+from _build_helpers import (
+    TYPE_DEFINITIONS_EXPANDED,
+)
+}}
+
+from libc.stdint cimport (
+    int64_t, int32_t,
+    uint64_t, uint32_t,
+)
+
+from numcircbuf.core cimport BlockingCircBuffer, OverwriteCircBuffer, _UtilityBufferBP
+
+# --- Generated bcb_spy_write_append signatures ---
+{{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+def bcb_spy_write_append_{{suffix}}(BlockingCircBuffer self, {{c_type}} value, double timeout=-1):
+    return self.write_append_{{suffix}}(value, timeout)
+{{endfor}}
+# --------------------------------
+
+# --- Generated ocb_spy_append signatures ---
+{{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+def ocb_spy_append_{{suffix}}(OverwriteCircBuffer self, {{c_type}} value):
+    self.append_{{suffix}}(value)
+{{endfor}}
+# --------------------------------
+
+# --- Generated ocb_spy_append_capture signatures ---
+{{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+def ocb_spy_append_{{suffix}}_capture(OverwriteCircBuffer self, {{c_type}} value):
+    cdef:
+        bint overwritten
+        {{c_type}} out_overwritten
+    overwritten = self.append_{{suffix}}_capture(value, &out_overwritten)
+    if overwritten: return out_overwritten
+{{''}}
+{{endfor}}
+# --------------------------------
+
+# --- _UtilityBufferBP spy methods ---
+def ubb_test_init(_UtilityBufferBP self, int c_dtype):
+    self.c_dtype = c_dtype
+
+def ubb_spy_append_c(_UtilityBufferBP self, double value):
+    cdef:
+        Py_ssize_t initial_write_head = self.write_head
+        Py_ssize_t write_head
+
+    self.append_c(value)
+
+    write_head = self.write_head
+    return write_head - initial_write_head
+
+def ubb_spy_clear_c(_UtilityBufferBP self):
+    cdef:
+        Py_ssize_t initial_size = self.size
+        Py_ssize_t initial_write_head = self.write_head
+        Py_ssize_t size
+        Py_ssize_t write_head
+
+    self.clear_c()
+
+    size = self.size
+    write_head = self.write_head
+
+    return size - initial_size, write_head - initial_write_head
+# --------------------------------

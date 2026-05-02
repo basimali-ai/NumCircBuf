@@ -1,0 +1,91 @@
+[build-system]
+requires = [
+    "setuptools",
+    "wheel",
+    "Cython",
+    "numpy<3.0.0",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "NumCircBuf"
+dynamic = [
+    "version",
+    "description",
+    "authors",
+    "readme",
+    "license",
+    "keywords",
+    "classifiers",
+    "dependencies",
+    "optional-dependencies",
+    "requires-python",
+]
+
+[project.urls]
+Homepage = "https://github.com/basimali-ai/NumCircBuf"
+Repository = "https://github.com/basimali-ai/NumCircBuf"
+Changelog = "https://github.com/basimali-ai/NumCircBuf/blob/main/docs/CHANGELOG.md"
+Issues = "https://github.com/basimali-ai/NumCircBuf/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+numcircbuf = ["*.pyi", "*.pxd", "*.pyx", "*.cpp", ".hpp"]
+
+[tool.cibuildwheel]
+test-requires = ["pytest", "pytest-mock", "numpy", "cython"]
+before-test = [
+    "pip install setuptools numpy cython",
+    "ONLY_TEST_API=1 python setup.py build_ext --inplace"
+]
+test-command = "PYTHONPATH={project}/src/numcircbuf pytest {project}/tests"
+
+[[tool.cibuildwheel.overrides]]
+select = "*-win*"
+before-test = [
+    "pip install setuptools numpy cython",
+    "set ONLY_TEST_API=1&& python setup.py build_ext --inplace"
+]
+test-command = "set PYTHONPATH={project}/src/numcircbuf&& pytest {project}/tests"
+
+[tool.mypy]
+python_version = "3.11"
+files = "numcircbuf"
+exclude = ".*\\.pyx|.*\\.pxd"
+ignore_missing_imports = true
+strict_optional = true
+warn_no_return = true
+warn_unused_ignores = true
+follow_imports = "silent"
+
+[tool.pytest.ini_options]
+python_files = "test_*.py"
+python_functions = "test_*"
+python_classes = "Test*"
+addopts = "-vv"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+plugins = ["Cython.Coverage"]
+source = ["src"]
+omit = [
+    "*/_build_helpers.py",
+    "*/_test_cython_api.pyx",
+]
+
+[tool.coverage.paths]
+source = [
+    "src",
+    "*/src",
+]
+
+[tool.coverage.report]
+omit = [
+    "*/_build_helpers.py",
+    "*/_test_cython_api.pyx",
+]

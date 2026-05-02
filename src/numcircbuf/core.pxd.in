@@ -1,0 +1,270 @@
+# Copyright 2026 Syed Basim Ali
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{py:
+from _build_helpers import (
+    TYPE_DEFINITIONS_EXPANDED,
+    FP_TYPE_DEFINITIONS_EXPANDED,
+    MATH_GROUPS,
+    SUM_COUNT_GROUPS,
+    CLEAR_TARGETS,
+    Suffixes,
+)
+}}
+
+from libc.stdint cimport (
+    int64_t, int32_t,
+    uint64_t, uint32_t,
+)
+from libcpp.unordered_set cimport unordered_set
+from libcpp.atomic cimport atomic
+
+cimport numpy as cnp
+
+cdef enum _OverwrittenMode:
+    _MODE_ALWAYS      = 0
+    _MODE_NEVER       = 1
+    _MODE_CONDITIONAL = 2
+
+cdef struct QueueState:
+    atomic[uint32_t] ticket_counter
+    uint32_t now_serving
+    unordered_set[uint32_t] abandoned_tickets
+
+# --- Generated SumCount struct signatures ---
+{{for _, c_type, struct_name, _ in SUM_COUNT_GROUPS}}
+cdef struct {{struct_name}}:
+    {{c_type}} sum
+    size_t count
+{{''}}
+{{endfor}}
+# --------------------------------
+
+cdef object POLICY_NEVER
+cdef object POLICY_ALWAYS
+cdef object POLICY_CONDITIONAL
+
+cdef object FOCUS_EXTEND_APPEND
+cdef object FOCUS_CALCULATION
+
+
+cdef class _MainBufferProtocolBase:
+    cdef:
+        void* buffer_ptr
+        cnp.ndarray _raw
+        cnp.ndarray buffer
+        int c_dtype
+        object _dtype
+        size_t elem_size
+        size_t _maxlen
+        size_t size
+        size_t write_head
+        cnp.ndarray _empty_result 
+        _InternalCircView _view
+
+
+cdef class _InternalCircView:
+    cdef:
+        _MainBufferProtocolBase _buffer_obj
+        void* buffer_ptr
+        cnp.ndarray buffer_arr
+        int c_dtype
+        object _dtype
+        size_t _maxlen
+        cnp.ndarray _empty_result
+
+    cdef cnp.ndarray to_numpy_c(self)
+
+
+cdef class BlockingCircBuffer(_MainBufferProtocolBase):
+    cdef:
+        size_t read_head
+
+        object lock
+        object not_empty
+        object not_full
+
+        QueueState read_queue
+        QueueState write_queue
+
+        # --- Generated write_append signatures ---
+        {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+        bint write_append_{{suffix}}(self, {{c_type}} value, double timeout=*) noexcept
+        {{endfor}}
+        # --------------------------------
+
+        bint write_extend_unchecked_c(
+            self, cnp.ndarray block_np, double timeout=*, bint warn_size=*
+        ) except -1
+        bint write_extend_c(
+            self, object block, double timeout=*, bint warn_size=*
+        ) except -1
+
+        cnp.ndarray read_c(self, size_t n=*, double timeout=*, bint partial_read=*)
+
+        size_t read_into_unchecked_c(
+            self, cnp.ndarray out_array_np, double timeout=*, bint partial_read=*
+        ) noexcept
+        size_t read_into_c(
+            self, cnp.ndarray out_array_np, double timeout=*, bint partial_read=*
+        ) except -1
+        
+        _InternalCircView view_c(self)
+
+        void clear_c(self) noexcept
+        # --- Generated clear_target_c signatures ---
+        {{for target in CLEAR_TARGETS}}
+        void clear_{{target}}_c(self) noexcept
+        {{endfor}}
+        # --------------------------------
+
+
+cdef class _OverwriteCircBufferBP(_MainBufferProtocolBase):
+    cdef:
+        void _setup_base(self, object maxlen) except *
+
+        _InternalCircView view_c(self)
+
+        void clear_c(self) noexcept
+        # --- Generated clear_target_c signatures ---
+        {{for target in CLEAR_TARGETS}}
+        void clear_{{target}}_c(self) noexcept
+        {{endfor}}
+        # --------------------------------
+
+
+cdef class _OverwriteCircBufferBPInclMath(_OverwriteCircBufferBP):
+    cdef:
+        # --- Generated sum/mean_squares signatures ---
+        double sum_squares_{{Suffixes.FP.value}}(self) noexcept
+        double mean_squares_{{Suffixes.FP.value}}(self) noexcept
+        # --------------------------------
+
+        # --- Generated sum signatures ---
+        {{for suffix, return_type, _ in MATH_GROUPS}}
+        {{return_type}} sum_{{suffix}}(self) noexcept
+        {{endfor}}
+        # --------------------------------
+
+        # --- Generated mean signatures ---
+        {{for suffix, return_type, _ in MATH_GROUPS}}
+        {{return_type}} mean_{{suffix}}(self) noexcept
+        {{endfor}}
+        # --------------------------------
+
+        # --- Generated sum_and_count_gt signatures ---
+        {{for suffix, c_type, return_struct, _ in SUM_COUNT_GROUPS}}
+        {{return_struct}} sum_and_count_gt_{{suffix}}(self, {{c_type}} threshold) noexcept
+        {{endfor}}
+        # --------------------------------
+
+
+cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
+    cdef:
+        bint is_fp
+        _OverwrittenMode overwritten_mode
+        str return_overwritten_policy
+
+        # --- Generated append signatures ---
+        {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+        cdef void append_{{suffix}}(self, {{c_type}} value) noexcept nogil
+        {{endfor}}
+        # --------------------------------
+
+        # --- Generated append_capture signatures ---
+        {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+        cdef bint append_{{suffix}}_capture(self, {{c_type}} value, {{c_type}}* out_overwritten) noexcept nogil
+        {{endfor}}
+        # --------------------------------
+
+        object _create_unsupported_operation_exception(self, str func_name)
+
+        cnp.ndarray extend_c(
+            self, object block, bint return_overwritten=*, bint warn_size=*
+        )
+        cnp.ndarray extend_unchecked_c(
+            self, cnp.ndarray block_np, bint return_overwritten=*, bint warn_size=*
+        )
+
+
+cdef class _UtilityBufferBP(_OverwriteCircBufferBPInclMath):
+    cdef:
+        uint64_t recalc_threshold
+        uint64_t operations_since_recalc
+
+        bint is_double
+        bint accum_valid
+
+        # --- Generated _accum_ptr fields ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{c_type}}* _accum_ptr_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+
+        object _create_not_implemented_exception(self, str func_name)
+
+        void append_c(self, double value) noexcept
+        void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=*)
+        void extend_c(self, object block, bint warn_size=*)
+
+        void recalculate_c(self)
+        void clear_cache_c(self)
+
+
+cdef class _OperationFocusUtilityBufferBP(_UtilityBufferBP):
+    cdef:
+        bint is_extend_focused
+
+
+cdef class RunningMeanSqBuffer(_OperationFocusUtilityBufferBP):
+    cdef:
+        # --- Generated sum_sq_accum fields ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{c_type}} sum_sq_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+        
+        double _cached_mean_sq
+
+        double mean_square_c(self) noexcept
+
+
+cdef class RunningMeanBuffer(_OperationFocusUtilityBufferBP):
+    cdef:
+        # --- Generated sum_accum fields ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{c_type}} sum_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+
+        double _cached_mean
+
+        double mean_c(self) noexcept
+
+
+cdef class IntegratedGatedBuffer(_UtilityBufferBP):
+    cdef:
+        double abs_gate_lin_sq
+        double rel_gate_lin_sq_factor
+        double _cached_gated_mean_sq
+
+        # --- Generated abs_gated_sum_sq_accum fields ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{c_type}} abs_gated_sum_sq_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+        
+        size_t abs_gated_count_accum
+
+        double gated_mean_square_c(self) noexcept

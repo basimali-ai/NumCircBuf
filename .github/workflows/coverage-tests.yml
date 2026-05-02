@@ -1,0 +1,83 @@
+name: Coverage Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "MANIFEST.in"
+
+jobs:
+  coverage_tests:
+    name: Coverage Tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build with Coverage
+        env:
+          COVERAGE_BUILD: "1"
+        run: pip install -e .[test]
+
+      - name: Run Pytest with coverage
+        env:
+          COVERAGE_FILE: .coverage.${{ matrix.os }}
+        run: coverage run -m pytest
+
+      - name: Upload .coverage.${{ matrix.os }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-${{ matrix.os }}
+          path: .coverage.${{ matrix.os }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  report:
+    name: Generate Final Report
+    needs: coverage_tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build extensions
+        env:
+          COVERAGE_BUILD: "1"
+        run: pip install -e .[test]
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+
+      - name: Combine coverage
+        run: |
+          coverage combine
+          coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
+          coverage html
+
+      - name: Upload HTML Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-coverage-report
+          path: htmlcov/
+          retention-days: 7

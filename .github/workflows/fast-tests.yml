@@ -1,0 +1,26 @@
+name: Fast Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "MANIFEST.in"
+
+jobs:
+  linux_tests:
+    name: Linux Tests
+    runs-on: ubuntu-latest
+    env:
+      TEST_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .[test]
+      - run: pytest tests/

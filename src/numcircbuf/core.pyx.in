@@ -1,0 +1,2653 @@
+# Copyright 2026 Syed Basim Ali
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# cython: language_level=3
+# cython: boundscheck=False, wraparound=False
+# cython: initializedcheck=False, cdivision=True
+# cython: language=c++
+
+# - language_level: Use Python X semantics.
+# - boundscheck: Index bounds checking on sequences.
+# - wraparound: Controls support for negative indexing.
+# - initializedcheck: Checks whether variables have been assigned a value before use.
+# - cdivision: Use C division behavior.
+
+cdef extern from *:
+    """
+    /* -----------------------------------------------------------------------------
+     * Copyright 2026 Syed Basim Ali
+     *
+     * Licensed under the Apache License, Version 2.0 (the "License");
+     * you may not use this file except in compliance with the License.
+     * You may obtain a copy of the License at
+     *
+     *     http://www.apache.org/licenses/LICENSE-2.0
+     *
+     * Unless required by applicable law or agreed to in writing, software
+     * distributed under the License is distributed on an "AS IS" BASIS,
+     * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     * See the License for the specific language governing permissions and
+     * limitations under the License.
+     * ----------------------------------------------------------------------------- */
+    """
+
+{{py:
+from _build_helpers import (
+    TYPE_DEFINITIONS_EXPANDED,
+    FP_TYPE_DEFINITIONS_EXPANDED,
+    MATH_GROUPS,
+    SUM_COUNT_GROUPS,
+    FP_SUM_COUNT_GROUPS,
+    Suffixes,
+    SupportedDtype,
+    CLEAR_TARGETS,
+    ClearTargets,
+)
+}}
+
+from libc.math cimport (
+    NAN,
+    INFINITY,
+    isnan,
+    isinf,
+    isfinite,
+    fmax,
+    fmaxf,
+)
+from libc.stdint cimport ( 
+    int64_t,
+    uint32_t,
+    uintptr_t,
+    SIZE_MAX,
+    UINT64_MAX,
+)
+
+from cpython.object cimport (
+    PyObject,
+    PyTypeObject,
+)
+
+cimport numpy as cnp
+
+cdef extern from "Python.h":
+    void Py_INCREF(PyObject* o)
+    const Py_ssize_t PY_SSIZE_T_MAX
+
+cdef extern from "numpy/arrayobject.h":
+    object PyArray_NewFromDescr(
+        PyTypeObject*      subtype,
+        cnp.PyArray_Descr* descr,
+        int                nd,
+        cnp.npy_intp*      dims,
+        cnp.npy_intp*      strides,
+        void*              data,
+        int                flags,
+        object             obj
+    )
+    PyTypeObject PyArray_Type
+
+cdef extern from "<cstring>" namespace "std" nogil:
+    void* memcpy(void* dest, const void* src, size_t n) noexcept
+
+cdef extern from "kernels.hpp" namespace "ncb::append" nogil:
+    bint overwritten_never_append[T](
+        T*      buf_ptr,
+        size_t* write_head_ptr,
+        size_t* size_ptr,
+        size_t  maxlen,
+        T       value
+    ) noexcept
+
+    bint overwritten_always_append[T](
+        T*      buf_ptr,
+        size_t* write_head_ptr,
+        size_t* size_ptr,
+        size_t  maxlen,
+        T       value,
+        T*      out_overwritten
+    ) noexcept
+
+    bint overwritten_conditional_append[T](
+        T*      buf_ptr,
+        size_t* write_head_ptr,
+        size_t* size_ptr,
+        size_t  maxlen,
+        T       value,
+        T*      out_overwritten,
+        int     return_overwritten
+    ) noexcept
+
+    size_t append_advance_head(size_t head, size_t maxlen) noexcept
+
+cdef extern from "kernels.hpp" namespace "ncb::extend" nogil:
+    void write_data(
+        char*       buf_ptr,
+        const char* src_ptr,
+        size_t      start,
+        size_t      maxlen,
+        size_t      n,
+        size_t      elem_size
+    ) noexcept
+
+    void read_data(
+        char*       dest_ptr,
+        const char* buf_ptr,
+        size_t      start,
+        size_t      maxlen,
+        size_t      n,
+        size_t      elem_size
+    ) noexcept
+
+    void read_overwritten(
+        char*       dest_ptr,
+        const char* buf_ptr,
+        size_t      write_head,
+        size_t      size,
+        size_t      maxlen,
+        size_t      n,
+        size_t      elem_size
+    ) noexcept
+    
+    size_t extend_advance_head(size_t head, size_t maxlen, size_t n) noexcept
+
+import threading
+import warnings
+from typing import (
+    Any,
+    Iterator,
+)
+
+import numpy as np
+
+from . import constants
+from . import exceptions
+
+cnp.import_array()
+
+# --- Generated abs tol constants ---
+cdef const float ABS_TOL_{{Suffixes.F32.value.upper()}} = 1e-6
+cdef const double ABS_TOL_{{Suffixes.F64.value.upper()}} = 1e-12
+# --------------------------------
+cdef size_t CACHE_LINE = 0
+
+
+cdef size_t get_cache_line():
+    global CACHE_LINE
+    if CACHE_LINE == 0:
+        from .system_info import get_cache_line_size
+        CACHE_LINE = get_cache_line_size()
+    return CACHE_LINE
+
+
+POLICY_NEVER = "never"
+POLICY_ALWAYS = "always"
+POLICY_CONDITIONAL = "conditional"
+
+FOCUS_EXTEND_APPEND = "extend/append"
+FOCUS_CALCULATION = "calculation"
+
+# --- Generated supported dtype objects ---
+cdef object {{SupportedDtype.F64.value}} = constants.SupportedDtypesFP.FLOAT64.value
+cdef object {{SupportedDtype.F32.value}} = constants.SupportedDtypesFP.FLOAT32.value
+cdef object {{SupportedDtype.I64.value}} = constants.SupportedDtypesINT.INT64.value
+cdef object {{SupportedDtype.I32.value}} = constants.SupportedDtypesINT.INT32.value
+cdef object {{SupportedDtype.U64.value}} = constants.SupportedDtypesUINT.UINT64.value
+cdef object {{SupportedDtype.U32.value}} = constants.SupportedDtypesUINT.UINT32.value
+# --------------------------------
+
+cdef object SUPPORTED_DTYPES_FP_TUPLE = (
+    {{SupportedDtype.F64.value}},
+    {{SupportedDtype.F32.value}},
+)
+cdef object SUPPORTED_DTYPES_ALL_TUPLE = SUPPORTED_DTYPES_FP_TUPLE + (
+    {{SupportedDtype.I64.value}},
+    {{SupportedDtype.I32.value}},
+    {{SupportedDtype.U64.value}},
+    {{SupportedDtype.U32.value}},
+)
+
+
+cdef inline size_t min_sz(size_t a, size_t b) noexcept nogil:
+    return a if a < b else b
+
+
+cdef str _format_index(object idx):
+    if isinstance(idx, slice):
+        start = '' if idx.start is None else idx.start
+        stop  = '' if idx.stop  is None else idx.stop
+        step  = '' if idx.step  is None else f":{idx.step}"
+        if step:
+            return f"{start}:{stop}:{idx.step}"
+        return f"{start}:{stop}"
+    else:
+        return str(idx)
+
+
+cdef str _view_index_error_msg(object idx):
+    return (
+        "\nIndexing and slicing are only supported on a snapshot view.\n"
+        f"Use .view()[{_format_index(idx)}]"
+    )
+
+
+cdef str _iter_error_msg():
+    return (
+        "\nIteration is only supported on a snapshot view.\n"
+        "Example:\n"
+        "    view = buffer.view()\n"
+        "    for x in view:\n"
+        "        ..."
+    )
+
+
+cdef str _block_dim_error_msg(str obj_repr, str func_name="extend"):
+    return (
+        f"\n{obj_repr}:\n{func_name} expects a 1-D block/array."
+    )
+
+
+# --- Generated filtering implementations ---
+{{for target in CLEAR_TARGETS}}
+{{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+cdef void _remove_{{target}}_{{suffix}}(
+    _MainBufferProtocolBase self,
+    {{c_type}}* ptr,
+    size_t read_pos
+) noexcept nogil:
+    cdef:
+        size_t write_pos
+        size_t i
+        size_t size = self.size
+        size_t maxlen = self._maxlen 
+        size_t write_head = self.write_head
+        {{c_type}} val
+        size_t kept_count = <size_t> 0
+
+    write_pos = read_pos
+
+    {{py: _func_call = 'isnan(val)' if target == ClearTargets.NANS.value else 'isinf(val)'}}
+    for i in range(size):
+        val = ptr[read_pos]
+        
+        if not {{_func_call}}:
+            if read_pos != write_pos:
+                ptr[write_pos] = val 
+            
+            write_pos += 1
+            if write_pos >= maxlen: write_pos = 0 
+            kept_count += 1
+
+        read_pos += 1
+        if read_pos >= maxlen: read_pos = 0 
+
+    self.size = kept_count
+    self.write_head = write_pos
+{{''}}
+{{''}}
+{{endfor}}
+{{endfor}}
+# --------------------------------
+
+
+# --- Generated arr_isfinite implementations ---
+{{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+cdef bint arr_isfinite_{{suffix}}(
+    {{c_type}}* ptr,    
+    size_t size,
+) noexcept nogil:
+    cdef size_t i
+    for i in range(size):
+        if not isfinite(ptr[i]):
+            return False
+    return True
+{{''}}
+{{''}}
+{{endfor}}
+# --------------------------------
+
+
+cdef inline size_t _get_start_pos(
+    size_t write_head, size_t size, size_t maxlen
+) noexcept nogil:
+    if write_head >= size:
+        return write_head - size
+    else:
+        return write_head + maxlen - size
+
+
+cdef class _MainBufferProtocolBase:
+    pass
+
+
+cdef class _InternalCircView:
+    def __cinit__(
+        self,
+        _MainBufferProtocolBase buffer_obj,
+        uintptr_t buffer_ptr,
+        cnp.ndarray buffer_arr,
+        int c_dtype,
+        object dtype,
+        size_t maxlen,
+        cnp.ndarray empty_result,
+    ):
+        self._buffer_obj = buffer_obj
+        self.buffer_ptr = <void*> buffer_ptr
+        self.buffer_arr = buffer_arr
+        self.c_dtype = c_dtype
+        self._dtype = dtype
+        self._maxlen = maxlen
+        self._empty_result = empty_result
+
+    def __len__(self) -> int:
+        return self._buffer_obj.size 
+
+    def __getitem__(self, idx: int | slice) -> float | int | np.ndarray | None:
+        cdef:
+            Py_ssize_t start, stop, step
+            Py_ssize_t n_total, n1, n2, i
+            Py_ssize_t stop_val, p2_start, stop2
+            Py_ssize_t maxlen = <Py_ssize_t> self._maxlen
+            Py_ssize_t size = <Py_ssize_t> self._buffer_obj.size
+            Py_ssize_t start_pos = <Py_ssize_t> _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(size)
+
+            if step > 0:
+                if start >= stop: return self._empty_result
+                n_total = (stop - start + step - 1) / step
+            else:
+                if start <= stop: return self._empty_result
+                n_total = (stop - start + step + 1) / step
+
+            i = start + start_pos
+            if i >= maxlen: i -= maxlen
+
+            if step > 0:
+                stop_val = i + (n_total - 1) * step
+                if stop_val < maxlen:
+                    return self.buffer_arr[
+                        i : i + n_total * step : step
+                    ]
+
+                n1 = (maxlen - i + step - 1) / step 
+                n2 = n_total - n1
+                p2_start = (i + n1 * step) - maxlen
+                return np.concatenate([ 
+                    self.buffer_arr[i : maxlen : step], 
+                    self.buffer_arr[p2_start : p2_start + n2 * step : step] 
+                ])
+
+            else:
+                stop_val = i + (n_total - 1) * step
+                if stop_val >= 0:
+                    if i + n_total * step < 0:
+                        return self.buffer_arr[i : : step] 
+                    else:
+                        return self.buffer_arr[ 
+                            i : i + n_total * step : step
+                        ]
+
+                n1 = (i / -step) + 1 
+                n2 = n_total - n1
+                p2_start = i + (n1 * step) + maxlen
+
+                stop2 = p2_start + n2 * step
+                if stop2 < 0:
+                    return np.concatenate([ 
+                        self.buffer_arr[i : : step], 
+                        self.buffer_arr[p2_start : : step]
+                    ])
+                else:
+                    return np.concatenate([ 
+                        self.buffer_arr[i : : step], 
+                        self.buffer_arr[p2_start : stop2 : step] 
+                    ])
+
+        else:
+            i = idx
+            if i < 0: i += size
+
+            if not (0 <= i < size): raise exceptions.IndexOutOfBounds(self, idx)
+            
+            i += start_pos
+            if i >= maxlen: i -= maxlen
+            
+            # --- Generated c_dtype dispatch ---
+            {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+            {{py: _, c_type, npy_const, _ = item}}
+            {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+                return (<{{c_type}}*> self.buffer_ptr)[i]
+            {{endfor}}
+            # --------------------------------
+
+    def __iter__(self) -> Iterator[Any]:
+        cdef:
+            size_t i, wrap_limit, end
+            bint wraps
+            void* p = self.buffer_ptr
+            # --- Generated buf_ptr locals ---
+            {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+            {{c_type}}* buf_ptr_{{suffix}} = <{{c_type}}*> p
+            {{endfor}}
+            # --------------------------------
+            size_t maxlen = self._maxlen
+            size_t current_size = self._buffer_obj.size
+            size_t current_start_pos = _get_start_pos(self._buffer_obj.write_head, current_size, maxlen)
+
+        if current_size == 0: return
+
+        i = current_start_pos
+        end = current_start_pos + current_size
+        
+        if end > maxlen:
+            wrap_limit = end - maxlen
+            end = maxlen
+            wraps = True
+        else:
+            wraps = False
+
+        # --- Generated c_dtype dispatch ---
+        {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+        {{py: suffix, _, npy_const, _ = item}}
+        {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+            while i < end:
+                yield buf_ptr_{{suffix}}[i]
+                i += 1
+            if wraps:
+                i = 0
+                while i < wrap_limit:
+                    yield buf_ptr_{{suffix}}[i]
+                    i += 1
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    @property
+    def maxlen(self) -> int:
+        return self._maxlen
+
+    @property
+    def dtype(self) -> type:
+        return self._dtype
+
+    cdef cnp.ndarray to_numpy_c(self):
+        cdef:
+            size_t end
+            size_t size = self._buffer_obj.size
+            size_t maxlen = self._maxlen
+            size_t start_pos = _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+
+        if size == 0:
+            return self._empty_result
+
+        end = start_pos + size
+
+        if end <= maxlen:
+            return self.buffer_arr[start_pos:end].copy()
+        else:
+            end -= maxlen
+            return np.concatenate(
+                (self.buffer_arr[start_pos:], self.buffer_arr[:end])
+            )
+
+    def to_numpy(self) -> np.ndarray:
+        return self.to_numpy_c()
+
+    def __repr__(self) -> str:
+        return f"<View at {hex(id(self))} for: {repr(self._buffer_obj)}>"
+
+    def __setitem__(self, idx, value) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            f"View is read only. "
+            "Use OverwriteCircBuffer.append()/extend() "
+            "or BlockingCircBuffer.write()"
+            )
+
+    def __delitem__(self, idx) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            f"View is read-only. "
+            "To remove all data, use OverwriteCircBuffer.clear() "
+            "or read()/clear() on BlockingCircBuffer"
+        )
+
+
+cdef void _init_underlying_arrays(
+    _MainBufferProtocolBase self, size_t maxlen, size_t elem_size, int c_dtype
+) except *:
+    cdef size_t cache_line = get_cache_line()
+    cdef size_t offset = (cache_line * 2) / elem_size
+    cdef size_t padding = offset + (cache_line / elem_size)
+    cdef cnp.npy_intp shape[1]
+    
+    shape[0] = maxlen + padding
+    self._raw = cnp.PyArray_ZEROS(1, &shape[0], c_dtype, 0)
+    shape[0] = maxlen
+    cdef cnp.PyArray_Descr* descr = cnp.PyArray_DESCR(self._raw)
+    Py_INCREF(<PyObject*> descr)
+    cdef char* _raw_ptr = <char*> cnp.PyArray_DATA(self._raw)
+    cdef void* _start_ptr = _raw_ptr + (offset * elem_size)
+    self.buffer = PyArray_NewFromDescr(
+        &PyArray_Type,
+        descr,
+        1,
+        &shape[0],
+        <cnp.npy_intp*> cnp.PyArray_STRIDES(self._raw),
+        _start_ptr,
+        cnp.NPY_ARRAY_WRITEABLE,
+        None
+    )
+    self.buffer_ptr = _start_ptr
+    
+    shape[0] = 0
+    self._empty_result = cnp.PyArray_SimpleNew(1, &shape[0], c_dtype)
+
+
+cdef void _shared_main_buffer_init(_MainBufferProtocolBase self, object maxlen) except *:
+    if not isinstance(maxlen, int):
+        raise exceptions.BufferCapacityTypeError(
+            self.__class__,
+            type(maxlen)
+        )
+    elif maxlen <= 0:
+        raise exceptions.BufferCapacityValueError(
+            False,
+            self.__class__,
+            maxlen
+        )
+    elif maxlen > PY_SSIZE_T_MAX:
+        raise exceptions.BufferCapacityValueError(
+            True,
+            self.__class__,
+            maxlen,
+        )
+
+    self._maxlen = maxlen
+    self.write_head = 0
+    self.size = 0
+
+    _init_underlying_arrays(self, maxlen, self.elem_size, self.c_dtype)
+
+    self._view = _InternalCircView(
+        self,
+        <uintptr_t> self.buffer_ptr,
+        self.buffer,
+        self.c_dtype,
+        self._dtype,
+        self._maxlen,
+        self._empty_result,
+    )
+
+
+cdef class BlockingCircBuffer(_MainBufferProtocolBase):
+    def __cinit__(self, maxlen, dtype={{SupportedDtype.F64.value}}):
+        # --- Generated dtype mapping ---
+        {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+        {{py: _, c_type, npy_const, supported_dtype = item}}
+        {{'if' if idx == 0 else 'elif'}} dtype is {{supported_dtype}}:
+            self.c_dtype   = cnp.{{npy_const}}
+            self.elem_size = sizeof({{c_type}})
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+        else:
+            raise exceptions.DataTypeError(
+                self.__class__,
+                dtype,
+                SUPPORTED_DTYPES_ALL_TUPLE
+            )
+
+        self._dtype = dtype
+
+        _shared_main_buffer_init(self, maxlen)
+
+        self.read_head = 0
+
+        self.lock = threading.Lock()
+        self.not_empty = threading.Condition(self.lock)
+        self.not_full = threading.Condition(self.lock)
+
+        self.read_queue.ticket_counter.store(0)
+        self.read_queue.now_serving = 0
+
+        self.write_queue.ticket_counter.store(0)
+        self.write_queue.now_serving = 0
+
+{{def append_shared_locals()}}
+        # >>> append_shared_locals >>>
+        cdef:
+            size_t current_write_head
+            size_t maxlen = self._maxlen
+            uint32_t ticket
+            bint timed_out = False
+        # <<< append_shared_locals <<<
+{{enddef}}
+
+{{def append_extend_timeout_handling()}}
+                    # >>> append_extend_timeout_handling >>>
+                    if timeout >= 0:
+                        if not self.not_full.wait(timeout): 
+                            timed_out = True
+                            break
+                    else:
+                        self.not_full.wait(None)
+                    # <<< append_extend_timeout_handling <<<
+{{enddef}}
+
+{{def acquire_append_turn_and_prepare_shared_context()}}
+        # >>> acquire_append_turn_and_prepare_shared_context >>>
+        ticket = self.write_queue.ticket_counter.fetch_add(1)
+
+        with self.lock:
+            while (
+                self.write_queue.now_serving != ticket
+                or maxlen - self.size == 0
+            ):
+{{append_extend_timeout_handling()}}
+
+            if not timed_out:
+                current_write_head = self.write_head
+        # <<< acquire_append_turn_and_prepare_shared_context <<<
+{{enddef}}
+
+{{def append_extend_advance_ticket_notify_and_return()}}
+        # >>> append_extend_advance_ticket_notify_and_return >>>
+            if self.write_queue.now_serving == ticket:
+                self.write_queue.now_serving += 1
+
+                if not self.write_queue.abandoned_tickets.empty():
+                    while self.write_queue.abandoned_tickets.count(self.write_queue.now_serving):
+                        self.write_queue.abandoned_tickets.erase(self.write_queue.now_serving)
+                        self.write_queue.now_serving += 1
+                    
+                self.not_full.notify_all()
+                self.not_empty.notify_all()
+
+            else:
+                self.write_queue.abandoned_tickets.insert(ticket)    
+
+        return not timed_out       
+        # <<< append_extend_advance_ticket_notify_and_return <<<
+{{enddef}}
+
+{{def append_advance_state_and_notify()}}
+        # >>> append_advance_state_and_notify >>>
+                self.write_head = append_advance_head(current_write_head, maxlen)
+                self.size += 1
+
+{{append_extend_advance_ticket_notify_and_return()}}
+
+        # <<< append_advance_state_and_notify <<<
+{{enddef}}
+
+    # --- Generated write_append implementations ---
+    {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+    cdef bint write_append_{{suffix}}(self, {{c_type}} value, double timeout=-1) noexcept:
+{{append_shared_locals()}}
+
+{{acquire_append_turn_and_prepare_shared_context()}}
+
+                (<{{c_type}}*>self.buffer_ptr)[current_write_head] = value
+
+{{append_advance_state_and_notify()}}
+            
+    {{endfor}}
+    # --------------------------------
+
+    def write_append(self, object value, double timeout=-1):
+{{append_shared_locals()}}
+            int c_dtype
+
+{{acquire_append_turn_and_prepare_shared_context()}}
+
+                c_dtype = self.c_dtype
+
+                # --- Generated c_dtype dispatch ---
+                {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+                {{py: _, c_type, npy_const, _ = item}}
+                {{'if' if idx == 0 else 'elif'}} c_dtype == cnp.{{npy_const}}:
+                    (<{{c_type}}*> self.buffer_ptr)[current_write_head] = <{{c_type}}> value
+                {{endfor}}
+                # --------------------------------
+
+{{append_advance_state_and_notify()}}
+
+    cdef bint write_extend_unchecked_c(
+        self, cnp.ndarray block_np, double timeout = -1, bint warn_size = True
+    ) except -1:
+        cdef:
+            size_t n = cnp.PyArray_DIM(block_np, 0)
+            size_t elem_size, maxlen, current_write_head
+            char* buf_ptr
+            char* src_ptr
+            uint32_t ticket
+            bint timed_out = False
+
+        if n == 0: return False
+
+        maxlen = self._maxlen
+        ticket = self.write_queue.ticket_counter.fetch_add(1)
+
+        with self.lock:
+            if n >= maxlen:
+                if warn_size and n > maxlen:
+                    warnings.warn(exceptions.DataSizeWarning(self, n, maxlen), stacklevel=2)
+
+                while (
+                    self.write_queue.now_serving != ticket
+                    or maxlen - self.size != maxlen
+                ):
+{{append_extend_timeout_handling()}}
+
+                if not timed_out:
+                    elem_size = self.elem_size
+                    buf_ptr = <char*> self.buffer_ptr
+                    src_ptr = <char*> cnp.PyArray_DATA(block_np)
+
+                    with nogil:
+                        memcpy(
+                            buf_ptr,
+                            src_ptr + ((n - maxlen) * elem_size),
+                            maxlen * elem_size
+                        )
+                        self.read_head = 0
+                        self.write_head = 0
+                        self.size = maxlen
+
+            else:
+                while (
+                    self.write_queue.now_serving != ticket
+                    or maxlen - self.size < n
+                ):
+{{append_extend_timeout_handling()}}
+
+                if not timed_out:
+                    elem_size = self.elem_size
+                    buf_ptr = <char*> self.buffer_ptr
+                    src_ptr = <char*> cnp.PyArray_DATA(block_np)
+
+                    with nogil:
+                        current_write_head = self.write_head
+                        write_data(
+                            buf_ptr,
+                            src_ptr,
+                            current_write_head,
+                            maxlen,
+                            n,
+                            elem_size
+                        )
+                        self.write_head = extend_advance_head(current_write_head, maxlen, n)
+                        self.size += n
+
+{{append_extend_advance_ticket_notify_and_return()}}
+
+    def write_extend_unchecked(
+            self, cnp.ndarray block_np, double timeout = -1, bint warn_size = True
+        ):
+        return self.write_extend_unchecked_c(block_np, timeout, warn_size)
+
+    cdef bint write_extend_c(
+        self, object block, double timeout = -1, bint warn_size = True
+    ) except -1:
+        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
+            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
+        )
+        if cnp.PyArray_NDIM(block_np) != 1:
+            raise exceptions.NumCircBufValueError(
+                class_obj=self.__class__,
+                obj=self,
+                message=_block_dim_error_msg(repr(self), "write_extend")
+            )
+        return self.write_extend_unchecked_c(block_np, timeout, warn_size)
+
+    def write_extend(
+        self, block, double timeout = -1, bint warn_size = True
+    ):
+        return self.write_extend_c(block, timeout, warn_size)
+
+{{def shared_read_locals()}}
+        # >>> shared_read_locals >>>
+        cdef:
+            size_t elem_size, current_read_head
+            size_t maxlen = self._maxlen
+            char* buf_ptr
+            char* dest_ptr
+            uint32_t ticket
+            bint timed_out = False  
+        # <<< shared_read_locals <<<
+{{enddef}}
+
+{{def read_timeout_logic()}}
+                    # >>> read_timeout_logic >>>
+                    if timeout >= 0:
+                        if not self.not_empty.wait(timeout): 
+                            timed_out = True
+                            {{result_var}} = {{timeout_return}}
+                            break                                
+                    else:
+                        self.not_empty.wait(None)
+                    # <<< read_timeout_logic <<<
+{{enddef}}
+
+{{def acquire_read_turn_and_prepare_shared_context()}}
+        # >>> acquire_read_turn_and_prepare_shared_context >>>
+        ticket = self.read_queue.ticket_counter.fetch_add(1)
+
+        with self.lock:
+            if partial_read:
+                while self.read_queue.now_serving != ticket or self.size == 0:
+{{read_timeout_logic()}}
+
+                if not timed_out:
+                    n = min_sz(n, self.size)
+
+            else:
+                n = min_sz(n, maxlen)
+
+                while self.read_queue.now_serving != ticket or self.size < n:
+{{read_timeout_logic()}}
+
+            if not timed_out:
+                elem_size = self.elem_size
+                buf_ptr = <char*> self.buffer_ptr
+        # <<< acquire_read_turn_and_prepare_shared_context <<<
+{{enddef}}
+
+{{def shared_read_data_logic_and_return()}}
+        # >>> shared_read_data_logic_and_return >>>
+                with nogil:
+                    current_read_head = self.read_head
+                    read_data(
+                        dest_ptr,
+                        buf_ptr,
+                        current_read_head,
+                        maxlen,
+                        n,
+                        elem_size
+                    )
+                    self.read_head = extend_advance_head(current_read_head, maxlen, n)
+                    self.size -= n
+
+            if self.read_queue.now_serving == ticket:
+                self.read_queue.now_serving += 1
+
+                if not self.read_queue.abandoned_tickets.empty():
+                    while self.read_queue.abandoned_tickets.count(self.read_queue.now_serving):
+                        self.read_queue.abandoned_tickets.erase(self.read_queue.now_serving)
+                        self.read_queue.now_serving += 1
+                    
+                self.not_full.notify_all()
+                self.not_empty.notify_all()
+
+            else:
+                self.read_queue.abandoned_tickets.insert(ticket)
+            
+        return {{result_var}}
+        # <<< shared_read_data_logic_and_return <<<
+{{enddef}}
+
+    cdef cnp.ndarray read_c(self, size_t n=SIZE_MAX, double timeout=-1, bint partial_read=True):
+{{shared_read_locals()}}
+
+            cnp.npy_intp shape[1]
+            cnp.ndarray result
+
+        if n == 0: return self._empty_result
+
+{{py: result_var, timeout_return = 'result', 'self._empty_result'}}
+{{acquire_read_turn_and_prepare_shared_context()}}
+
+                shape[0] = n
+                result = cnp.PyArray_SimpleNew(1, &shape[0], self.c_dtype)
+                dest_ptr = <char*> cnp.PyArray_DATA(result)
+
+{{shared_read_data_logic_and_return()}}
+{{py: del result_var, timeout_return}}
+
+    def read(self, size_t n=SIZE_MAX, double timeout=-1, bint partial_read=True):
+        return self.read_c(n, timeout, partial_read)
+
+    cdef size_t read_into_unchecked_c(
+        self, cnp.ndarray out_array_np, double timeout=-1, bint partial_read=True
+    ) noexcept:
+{{shared_read_locals()}}
+
+            size_t n = cnp.PyArray_DIM(out_array_np, 0)
+
+        if n == 0: return 0
+
+{{py: result_var, timeout_return = 'n', '0'}}
+{{acquire_read_turn_and_prepare_shared_context()}}
+
+                dest_ptr = <char*> cnp.PyArray_DATA(out_array_np)
+
+{{shared_read_data_logic_and_return()}}
+{{py: del result_var, timeout_return}}
+
+    def read_into_unchecked(self, cnp.ndarray out_array_np, double timeout=-1, bint partial_read=True):
+        return self.read_into_unchecked_c(out_array_np, timeout, partial_read)
+
+    cdef size_t read_into_c(
+        self, cnp.ndarray out_array_np, double timeout=-1, bint partial_read=True
+    ) except -1:
+        if (
+            (not cnp.PyArray_IS_C_CONTIGUOUS(out_array_np))
+            or (cnp.PyArray_TYPE(out_array_np) != self.c_dtype)
+            or (cnp.PyArray_NDIM(out_array_np) != 1)
+        ):
+            raise exceptions.NumCircBufValueError(
+                class_obj=self.__class__,
+                obj=self,
+                message=f"\n{self}:\nread_into requires a 1-D C-Contiguous NumPy array "
+                "of the same dtype as the buffer."
+            )
+        return self.read_into_unchecked_c(out_array_np, timeout, partial_read)
+
+    def read_into(self, cnp.ndarray out_array_np, double timeout=-1, bint partial_read=True):
+        return self.read_into_c(out_array_np, timeout, partial_read)
+
+    cdef _InternalCircView view_c(self):
+        return self._view
+    
+    def view(self):
+        return self.view_c()
+
+    cdef void clear_c(self) noexcept:
+        with self.lock:
+            self.read_head = 0
+            self.write_head = 0
+            self.size = 0
+            self.not_full.notify_all()
+    
+    def clear(self):
+        self.clear_c()
+
+    # --- Generated clear_target_c methods ---
+    {{for target in CLEAR_TARGETS}}
+    cdef void clear_{{target}}_c(self) noexcept:
+        with self.lock:
+            if self.size == 0:
+                return
+
+            with nogil:
+                # --- Generated c_dtype dispatch ---
+                {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
+                {{py: suffix, c_type, npy_const, _ = item}}
+                {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+                    _remove_{{target}}_{{suffix}}(
+                        self, <{{c_type}}*>self.buffer_ptr, self.read_head
+                    )
+                {{endfor}}
+                # --------------------------------
+
+            self.not_full.notify_all()
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated clear_target methods ---
+    {{for target in CLEAR_TARGETS}}
+    def clear_{{target}}(self):
+        self.clear_{{target}}_c()
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    def __len__(self) -> int:
+        return self.size
+
+    @property
+    def maxlen(self) -> int:
+        return self._maxlen
+
+    @property
+    def dtype(self) -> type:
+        return self._dtype
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} at {hex(id(self))} : "
+            f"dtype={self._dtype.__name__}, len={self.size}, maxlen={self._maxlen}>"
+        )
+
+    def __getitem__(self, idx) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            _view_index_error_msg(idx)
+            )
+
+    def __iter__(self) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            _iter_error_msg()
+            )
+
+    def __setitem__(self, idx, value):
+        raise exceptions.InvalidModification(
+            self,
+            "Use .write()"
+            )
+
+    def __delitem__(self, idx):
+        raise exceptions.InvalidModification(
+            self,
+            "To remove all data, use .clear() "
+            "Or to pop/remove the oldest element, use .read() "
+        )
+
+
+cdef class _OverwriteCircBufferBP(_MainBufferProtocolBase):
+    cdef void _setup_base(self, object maxlen) except *:
+        _shared_main_buffer_init(self, maxlen)
+
+    cdef void clear_c(self) noexcept:
+        self.write_head = 0
+        self.size = 0
+
+    def clear(self):
+        self.clear_c()
+
+    cdef _InternalCircView view_c(self):
+        return self._view
+
+    def view(self):
+        return self.view_c()
+
+    # --- Generated clear_target_c methods ---
+    {{for target in CLEAR_TARGETS}}
+    cdef void clear_{{target}}_c(self) noexcept:
+        cdef:
+            size_t read_pos
+            size_t size = self.size
+            
+        if size == 0:
+            return
+
+        with nogil:
+            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            # --- Generated c_dtype dispatch ---
+            {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
+            {{py: suffix, c_type, npy_const, _ = item}}
+            {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+                _remove_{{target}}_{{suffix}}(
+                    self, <{{c_type}}*>self.buffer_ptr, read_pos
+                )
+            {{endfor}}
+            # --------------------------------
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated clear_target methods ---
+    {{for target in CLEAR_TARGETS}}
+    def clear_{{target}}(self):
+        self.clear_{{target}}_c()
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    def __len__(self) -> int:
+        return self.size
+
+    @property
+    def maxlen(self) -> int:
+        return self._maxlen
+
+    @property
+    def dtype(self) -> type:
+        return self._dtype
+
+    def __getitem__(self, idx) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            _view_index_error_msg(idx)
+            )
+
+    def __iter__(self) -> None:
+        raise exceptions.InvalidModification(
+            self,
+            _iter_error_msg()
+            )
+
+    def __setitem__(self, idx, value):
+        raise exceptions.InvalidModification(
+            self,
+            "Use .append() or .extend() to add element/s"
+            )
+
+    def __delitem__(self, idx):
+        raise exceptions.InvalidModification(
+            self,
+            "To remove all data, use .clear() "
+            "or depend on the auto-popping/removal behavior"
+        )
+
+
+cdef class _OverwriteCircBufferBPInclMath(_OverwriteCircBufferBP):
+
+{{def shared_start_end_calculation()}}
+        # >>> shared_start_end_calculation >>>
+        start = _get_start_pos(self.write_head, size, maxlen)
+        end = start + size
+        # <<< shared_start_end_calculation <<<
+{{enddef}}
+
+    # --- Generated sum_squares signature ---
+    cdef double sum_squares_{{Suffixes.FP.value}}(self) noexcept:
+    # --------------------------------
+        cdef:
+            size_t start, end
+            size_t size = self.size
+            size_t maxlen = self._maxlen
+            double p1, p2
+
+        if size == 0: return 0.0
+
+{{shared_start_end_calculation()}}
+        
+        if end <= maxlen:
+            view = self.buffer[start:end]
+            return np.dot(view, view)
+        else:
+            end -= maxlen
+            view_p1 = self.buffer[start:]
+            view_p2 = self.buffer[:end]
+            p1 = np.dot(view_p1, view_p1)
+            p2 = np.dot(view_p2, view_p2)
+            return p1 + p2
+
+    # --- Generated mean_squares signature ---
+    cdef double mean_squares_{{Suffixes.FP.value}}(self) noexcept:
+    # --------------------------------
+        cdef:
+            size_t start, end
+            size_t size = self.size
+            size_t maxlen = self._maxlen
+            double p1, p2, sum_sq
+
+        if size == 0: return 0.0
+
+{{shared_start_end_calculation()}}
+        
+        if end <= maxlen:
+            view = self.buffer[start:end]
+            sum_sq = np.dot(view, view)
+            return sum_sq / size
+        else:
+            end -= maxlen
+            view_p1 = self.buffer[start:]
+            view_p2 = self.buffer[:end]
+            p1 = np.dot(view_p1, view_p1)
+            p2 = np.dot(view_p2, view_p2)
+            return (p1 + p2) / size
+
+    # --- Generated sum implementations ---
+    {{for suffix, return_type, dtype in MATH_GROUPS}}
+    cdef {{return_type}} sum_{{suffix}}(self) noexcept:
+        cdef:
+            size_t start, end
+            size_t size = self.size
+            size_t maxlen = self._maxlen            
+            {{return_type}} p1, p2
+        
+        if size == 0: return 0
+
+{{shared_start_end_calculation()}}
+
+        if end <= maxlen:
+            return np.sum(self.buffer[start:end], dtype={{dtype}})
+        else:
+            end -= maxlen
+            p1 = np.sum(self.buffer[start:], dtype={{dtype}})
+            p2 = np.sum(self.buffer[:end], dtype={{dtype}})
+            return p1 + p2
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated mean implementations ---
+    {{for suffix, return_type, dtype in MATH_GROUPS}}
+    cdef {{return_type}} mean_{{suffix}}(self) noexcept:
+        cdef:
+            size_t start, end
+            size_t size = self.size
+            size_t maxlen = self._maxlen
+            {{return_type}} p1, p2
+        
+        if size == 0: return 0
+
+{{shared_start_end_calculation()}}
+
+        {{py: _size = '(<Py_ssize_t> size)' if suffix == Suffixes.INT.value else 'size'}}
+
+        if end <= maxlen:
+            return (<{{return_type}}> np.sum(self.buffer[start:end], dtype={{dtype}})) / {{_size}}
+        else:
+            end -= maxlen
+            p1 = np.sum(self.buffer[start:], dtype={{dtype}})
+            p2 = np.sum(self.buffer[:end], dtype={{dtype}})
+            return (p1 + p2) / {{_size}}
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated sum_and_count_gt implementations ---
+    {{for suffix, c_type, return_struct, _ in SUM_COUNT_GROUPS}}
+    cdef {{return_struct}} sum_and_count_gt_{{suffix}}(self, {{c_type}} threshold) noexcept:
+        cdef:
+            size_t start, end, p1_count, p2_count
+            size_t size = self.size
+            size_t maxlen = self._maxlen
+            {{c_type}} p1_sum, p2_sum
+            {{return_struct}} result
+
+        if size == 0:
+            result.sum = 0
+            result.count = 0
+            return result
+
+        {{py: is_f32 = suffix == Suffixes.F32.value}}
+        {{py: _no_wrap_threshold = 'np.float32(threshold)' if is_f32 else 'threshold'}}
+        {{py: _wrap_threshold = 'threshold_np' if is_f32 else 'threshold'}}
+        
+{{shared_start_end_calculation()}}
+
+        if end <= maxlen:
+            view = self.buffer[start:end]
+            mask = (view > {{_no_wrap_threshold}}) | np.isnan(view)
+            result.sum = np.dot(view, mask)
+            result.count = np.count_nonzero(mask)
+        else:
+            {{if is_f32}}
+            threshold_np = np.float32(threshold)
+            {{endif}}
+            end -= maxlen
+            view_p1 = self.buffer[start:]
+            view_p2 = self.buffer[:end]
+            mask1 = (view_p1 > {{_wrap_threshold}}) | np.isnan(view_p1)
+            mask2 = (view_p2 > {{_wrap_threshold}}) | np.isnan(view_p2)
+            p1_sum = np.dot(view_p1, mask1)
+            p2_sum = np.dot(view_p2, mask2)
+            p1_count = np.count_nonzero(mask1)
+            p2_count = np.count_nonzero(mask2)
+            result.sum = p1_sum + p2_sum
+            result.count = p1_count + p2_count
+
+        return result
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+
+{{def shared_extend_locals()}}
+    # >>> shared_extend_locals >>>
+    cdef:
+        size_t n
+        size_t size, elem_size, maxlen, current_write_head
+        char* buf_ptr
+        char* src_ptr
+    # <<< shared_extend_locals <<<
+{{enddef}}
+
+{{def shared_extend_init_logic()}}
+    # >>> shared_extend_init_logic >>>
+    n = cnp.PyArray_DIM(block_np, 0)
+    if n == 0: return self._empty_result
+
+    size = self.size
+    elem_size = self.elem_size
+    maxlen = self._maxlen
+    current_write_head = self.write_head
+    buf_ptr = <char*> self.buffer_ptr
+    src_ptr = <char*> cnp.PyArray_DATA(block_np)
+    # <<< shared_extend_init_logic <<<
+{{enddef}}
+
+{{def shared_extend_warning_logic()}}
+    # >>> shared_extend_warning_logic >>>
+    if n >= maxlen:
+        if warn_size and n > maxlen:
+            warnings.warn(exceptions.DataSizeWarning(self, n, maxlen), stacklevel=2)    
+    # <<< shared_extend_warning_logic <<<
+{{enddef}}
+
+{{def shared_extend_overflow_write_logic()}}
+            # >>> shared_extend_overflow_write_logic >>>
+            memcpy(
+                buf_ptr,
+                src_ptr + ((n - maxlen) * elem_size),
+                maxlen * elem_size
+            )
+            self.write_head = 0
+            self.size = maxlen
+            # <<< shared_extend_overflow_write_logic <<<
+{{enddef}}
+
+{{def shared_extend_write_logic()}}
+        # >>> shared_extend_write_logic >>>
+        write_data(
+            buf_ptr,
+            src_ptr,
+            current_write_head,
+            maxlen,
+            n,
+            elem_size
+        )
+        self.write_head = extend_advance_head(current_write_head, maxlen, n)
+
+        if size != maxlen:
+            self.size = min_sz(maxlen, size + n)
+        # <<< shared_extend_write_logic <<<
+{{enddef}}
+
+
+# --- Generated extend implementations ---
+{{for suffix in ('conditional', 'always')}}
+cdef cnp.ndarray extend_{{suffix}}(
+    _OverwriteCircBufferBPInclMath self,
+    cnp.ndarray block_np,
+    bint warn_size,
+    {{'bint return_overwritten' if suffix == 'conditional' else ''}}
+):
+{{shared_extend_locals()}}
+        size_t overwritten_len
+        cnp.npy_intp shape[1]
+        cnp.ndarray overwritten_values
+        char* dest_ptr
+
+{{shared_extend_init_logic()}}
+    overwritten_values = self._empty_result
+    dest_ptr = NULL
+
+{{shared_extend_warning_logic()}}
+        {{'if return_overwritten and size > 0' if suffix == 'conditional' else 'if size > 0'}}:
+            shape[0] = size
+            overwritten_values = cnp.PyArray_SimpleNew(1, &shape[0], self.c_dtype)
+            dest_ptr = <char*> cnp.PyArray_DATA(overwritten_values)
+
+        with nogil:
+            if dest_ptr != NULL:
+                read_overwritten(
+                    dest_ptr,
+                    buf_ptr,
+                    current_write_head,
+                    size,
+                    maxlen,
+                    size,
+                    elem_size
+                )
+            
+{{shared_extend_overflow_write_logic()}}
+
+        return overwritten_values
+
+    {{'if return_overwritten' if suffix == 'conditional' else 'if True'}}:
+        overwritten_len = 0
+        if size + n > maxlen:
+            overwritten_len = size + n - maxlen
+
+        if overwritten_len:
+            shape[0] = overwritten_len
+            overwritten_values = cnp.PyArray_SimpleNew(1, &shape[0], self.c_dtype)
+            dest_ptr = <char*> cnp.PyArray_DATA(overwritten_values)
+
+    with nogil:
+        if dest_ptr != NULL:
+            read_overwritten(
+                dest_ptr,
+                buf_ptr,
+                current_write_head,
+                size,
+                maxlen,
+                overwritten_len,
+                elem_size
+            )
+
+{{shared_extend_write_logic()}}
+
+    return overwritten_values
+{{''}}
+{{''}}
+{{endfor}}
+# --------------------------------
+
+
+cdef cnp.ndarray extend_never(
+    _OverwriteCircBufferBPInclMath self,
+    cnp.ndarray block_np,
+    bint warn_size
+):
+{{shared_extend_locals()}}
+
+{{shared_extend_init_logic()}}
+
+{{shared_extend_warning_logic()}}
+
+        with nogil:
+{{shared_extend_overflow_write_logic()}}
+
+        return self._empty_result
+    
+    with nogil:
+{{shared_extend_write_logic()}}
+    
+    return self._empty_result
+
+
+cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
+    def __cinit__(self, maxlen, object return_overwritten_policy, dtype={{SupportedDtype.F64.value}}):
+
+        # --- Generated dtype mapping ---
+        {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+        {{py: _, c_type, npy_const, supported_dtype = item}}
+        {{'if' if idx == 0 else 'elif'}} dtype is {{supported_dtype}}:
+            self.c_dtype   = cnp.{{npy_const}}
+            self.elem_size = sizeof({{c_type}})
+            self.is_fp = {{'True' if c_type in ('double', 'float') else 'False'}}
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+        else:
+            raise exceptions.DataTypeError(
+                self.__class__,
+                dtype,
+                SUPPORTED_DTYPES_ALL_TUPLE
+            )
+
+        self._dtype = dtype
+
+        if not isinstance(return_overwritten_policy, str):
+            raise exceptions.ConfigurationTypeError(
+                self.__class__,
+                'return_overwritten_policy',
+                type(return_overwritten_policy),
+                (str,),
+            )
+        elif return_overwritten_policy == POLICY_NEVER:
+            self.overwritten_mode = _MODE_NEVER            
+        elif return_overwritten_policy == POLICY_ALWAYS:
+            self.overwritten_mode = _MODE_ALWAYS
+        elif return_overwritten_policy == POLICY_CONDITIONAL:
+            self.overwritten_mode = _MODE_CONDITIONAL
+        else:
+            raise exceptions.ConfigurationValueError(
+                self.__class__,
+                'return_overwritten_policy',
+                return_overwritten_policy,
+                (POLICY_NEVER, POLICY_ALWAYS, POLICY_CONDITIONAL),
+            )
+
+        self._setup_base(maxlen)
+
+    # --- Generated append implementations ---
+    {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+    cdef void append_{{suffix}}(self, {{c_type}} value) noexcept nogil:
+        overwritten_never_append[{{c_type}}](
+            <{{c_type}}*>self.buffer_ptr,
+            &self.write_head,
+            &self.size,
+            self._maxlen,
+            value,
+        )
+    {{''}}
+    {{endfor}}        
+    # --------------------------------
+
+    # --- Generated append_capture implementations ---
+    {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+    cdef bint append_{{suffix}}_capture(
+        self, {{c_type}} value, {{c_type}}* out_overwritten
+    ) noexcept nogil:
+        return overwritten_always_append[{{c_type}}](
+            <{{c_type}}*>self.buffer_ptr,
+            &self.write_head,
+            &self.size,
+            self._maxlen,
+            value,
+            out_overwritten,
+        )
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    def append(self, object value, bint return_overwritten=False):   
+        cdef:
+            int c_dtype = self.c_dtype
+            _OverwrittenMode overwritten_mode = self.overwritten_mode
+            bint overwritten
+            # --- Generated overwritten locals ---
+            {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
+            {{c_type}} overwritten_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        # --- Generated c_dtype dispatch ---
+        {{for idx, item in enumerate(TYPE_DEFINITIONS_EXPANDED)}}
+        {{py: suffix, c_type, npy_const, _ = item}}
+        {{'if' if idx == 0 else 'elif'}} c_dtype == cnp.{{npy_const}}:
+            if overwritten_mode == _MODE_NEVER:
+                overwritten_never_append[{{c_type}}](
+                    <{{c_type}}*>self.buffer_ptr,
+                    &self.write_head,
+                    &self.size,
+                    self._maxlen,
+                    <{{c_type}}>value,
+                )
+                return None
+
+            elif overwritten_mode == _MODE_ALWAYS:
+                overwritten = overwritten_always_append[{{c_type}}](
+                    <{{c_type}}*>self.buffer_ptr,
+                    &self.write_head,
+                    &self.size,
+                    self._maxlen,
+                    <{{c_type}}>value,
+                    &overwritten_{{suffix}},
+                )
+                if not overwritten:
+                    return None
+                return overwritten_{{suffix}}
+
+            elif overwritten_mode == _MODE_CONDITIONAL:
+                overwritten = overwritten_conditional_append[{{c_type}}](
+                    <{{c_type}}*>self.buffer_ptr,
+                    &self.write_head,
+                    &self.size,
+                    self._maxlen,
+                    <{{c_type}}>value,
+                    &overwritten_{{suffix}},
+                    return_overwritten,
+                )
+                if not overwritten:
+                    return None
+                return overwritten_{{suffix}}
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+{{def shared_extend_dispatch_logic()}}
+        # >>> shared_extend_dispatch_logic >>>
+        if overwritten_mode == _MODE_NEVER:
+            return extend_never(self, block_np, warn_size)
+        elif overwritten_mode == _MODE_ALWAYS:
+            return extend_always(self, block_np, warn_size)
+        elif overwritten_mode == _MODE_CONDITIONAL:
+            return extend_conditional(self, block_np, warn_size, return_overwritten)
+        # <<< shared_extend_dispatch_logic <<<
+{{enddef}}
+
+    cdef cnp.ndarray extend_c(
+        self, object block, bint return_overwritten=False, bint warn_size=True
+    ):
+        cdef _OverwrittenMode overwritten_mode = self.overwritten_mode
+        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
+            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
+        )
+        if cnp.PyArray_NDIM(block_np) != 1:
+            raise exceptions.NumCircBufValueError(
+                class_obj=self.__class__,
+                obj=self,
+                message=_block_dim_error_msg(repr(self))
+            )
+
+{{shared_extend_dispatch_logic()}}
+
+    def extend(
+        self, block, bint return_overwritten=False, bint warn_size=True
+    ):
+        return self.extend_c(block, return_overwritten, warn_size)
+
+    cdef cnp.ndarray extend_unchecked_c(
+        self, cnp.ndarray block_np, bint return_overwritten=False, bint warn_size=True
+    ):
+        cdef _OverwrittenMode overwritten_mode = self.overwritten_mode
+
+{{shared_extend_dispatch_logic()}}
+
+    def extend_unchecked(
+        self, cnp.ndarray block_np, bint return_overwritten=False, bint warn_size=True
+    ):
+        return self.extend_unchecked_c(block_np, return_overwritten, warn_size)
+
+    cdef object _create_unsupported_operation_exception(self, str func_name):
+        return exceptions.UnsupportedOperation(
+            self,
+            getattr(self, func_name),
+            func_name,
+            f"\n{self}:\n"
+            f".{func_name}() is only supported for floating-point buffers.\n"
+            "Risk of overflow."
+        )
+
+    # --- Generated sum/mean_squares python implementations ---
+    {{for func_name in ("mean_squares", "sum_squares")}}
+    def {{func_name}}(self):
+        if self.is_fp:
+            return self.{{func_name}}_{{Suffixes.FP.value}}()
+        raise self._create_unsupported_operation_exception("{{func_name}}")
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated sum/mean python implementations ---
+    {{for func_name in ("mean", "sum")}}
+    def {{func_name}}(self):
+        if self.is_fp:
+            return self.{{func_name}}_{{Suffixes.FP.value}}()
+        elif self.c_dtype == cnp.NPY_INT32:
+            return self.{{func_name}}_{{Suffixes.INT.value}}()
+        elif self.c_dtype == cnp.NPY_UINT32:
+            return self.{{func_name}}_{{Suffixes.UINT.value}}()
+        raise self._create_unsupported_operation_exception("{{func_name}}")
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    def sum_and_count_gt(self, object threshold):
+        cdef:
+            # --- Generated result locals ---
+            {{for suffix, _, return_struct, _ in SUM_COUNT_GROUPS}}
+            {{return_struct}} result_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        # --- Generated c_dtype dispatch ---
+        {{for idx, item in enumerate(SUM_COUNT_GROUPS)}}
+        {{py: suffix, c_type, _, npy_const = item}}
+        {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+            result_{{suffix}} = self.sum_and_count_gt_{{suffix}}(<{{c_type}}>threshold)
+            return (result_{{suffix}}.sum, result_{{suffix}}.count)
+        {{endfor}}
+        # --------------------------------
+        raise self._create_unsupported_operation_exception("sum_and_count_gt")
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} at {hex(id(self))} : "
+            f"dtype={self._dtype.__name__}, len={self.size}, maxlen={self._maxlen}>"
+        )
+
+
+cdef class _UtilityBufferBP(_OverwriteCircBufferBPInclMath):
+    cdef object _create_not_implemented_exception(self, str func_name):
+        return exceptions.NumCircBufNotImplementedError(
+            class_obj = self.__class__,
+            obj = self,
+            message = f"{func_name} must be overwritten."
+        )
+
+    cdef void append_c(self, double value) noexcept:
+        pass
+
+    def append(self, double value):
+        raise self._create_not_implemented_exception("append")
+
+    cdef void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=True):
+        raise self._create_not_implemented_exception("extend_unchecked_c")
+
+    def extend_unchecked(self, cnp.ndarray block_np, bint warn_size=True):
+        self.extend_unchecked_c(block_np, warn_size)
+
+    cdef void extend_c(self, object block, bint warn_size=True):
+        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
+            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
+        )
+        if cnp.PyArray_NDIM(block_np) != 1:
+            raise exceptions.NumCircBufValueError(
+                class_obj=self.__class__,
+                obj=self,
+                message=_block_dim_error_msg(repr(self))
+            )    
+        self.extend_unchecked_c(block_np, warn_size)
+
+    def extend(self, block, bint warn_size=True):
+        self.extend_c(block, warn_size)
+
+    cdef void recalculate_c(self):
+        raise self._create_not_implemented_exception("recalculate_c")
+
+    def recalculate(self):
+        self.recalculate_c()
+
+    cdef void clear_cache_c(self):
+        raise self._create_not_implemented_exception("clear_cache_c")
+
+    def clear_cache(self):
+        self.clear_cache_c()
+
+    cdef void clear_c(self) noexcept:
+        pass
+
+    def clear(self):
+        self.clear_c()
+
+    # --- Generated clear_target_c methods ---
+    {{for target in CLEAR_TARGETS}}
+    cdef void clear_{{target}}_c(self) noexcept:
+        cdef:
+            size_t read_pos
+            size_t size = self.size
+            bint success = False
+            
+        if size == 0:
+            return
+
+        with nogil:
+            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            # --- Generated c_dtype dispatch ---
+            {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
+            {{py: suffix, c_type, npy_const, _ = item}}
+            {{'if' if idx == 0 else 'elif'}} self.c_dtype == cnp.{{npy_const}}:
+                _remove_{{target}}_{{suffix}}(
+                    self, <{{c_type}}*>self.buffer_ptr, read_pos
+                )
+                success = True
+            {{endfor}}
+            # --------------------------------
+
+        if success:
+            self.recalculate_c()
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    # --- Generated clear_target methods ---
+    {{for target in CLEAR_TARGETS}}
+    def clear_{{target}}(self):
+        self.clear_{{target}}_c()
+    {{''}}
+    {{endfor}}
+    # --------------------------------
+
+    def _set_accum_value(self, double value):
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _value = 'value' if is_f64 else f'<{c_type}> value'}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            self._accum_ptr_{{suffix}}[0] = {{_value}}
+        {{endfor}}
+        # --------------------------------
+
+
+cdef class _OperationFocusUtilityBufferBP(_UtilityBufferBP):
+    pass
+
+
+cdef void _shared_utility_buffer_init(
+    _UtilityBufferBP self, object dtype, object recalc_threshold, object maxlen
+)  except *:
+    # --- Generated dtype mapping ---
+    {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
+    {{py: _, c_type, npy_const, supported_dtype = item}}
+    {{'if' if idx == 0 else 'elif'}} dtype == {{supported_dtype}}:
+        self.is_double = {{'True' if c_type == 'double' else 'False'}}
+        self.c_dtype   = cnp.{{npy_const}}
+        self.elem_size = sizeof({{c_type}})
+    {{endfor}}
+    # --------------------------------
+    else:
+        raise exceptions.DataTypeError(
+            self.__class__,
+            dtype,
+            SUPPORTED_DTYPES_FP_TUPLE
+        )
+    
+    self._dtype = dtype
+
+    if recalc_threshold is None:
+        recalc_threshold = 0
+    elif not isinstance(recalc_threshold, int):
+        raise exceptions.ConfigurationTypeError(
+            self.__class__,
+            'recalc_threshold',
+            type(recalc_threshold),
+            (int, None),
+        )
+    elif recalc_threshold < 0 or recalc_threshold > UINT64_MAX:
+        raise exceptions.ConfigurationValueError(
+            self.__class__,
+            'recalc_threshold',
+            recalc_threshold,
+            {"min": 0, "max": UINT64_MAX},
+        )
+
+    self.recalc_threshold = recalc_threshold
+    self.operations_since_recalc = 0
+    self.accum_valid = True
+
+    self._setup_base(maxlen)
+
+
+cdef void _shared_utility_buffer_init_with_operation_focus(
+    _OperationFocusUtilityBufferBP self,
+    object dtype,
+    object recalc_threshold,
+    object maxlen,
+    object operation_focus
+)  except *:
+    if not isinstance(operation_focus, str):
+        raise exceptions.ConfigurationTypeError(
+            self.__class__,
+            'operation_focus',
+            type(operation_focus),
+            (str,),
+        )       
+    elif operation_focus == FOCUS_EXTEND_APPEND:
+        self.is_extend_focused = True
+    elif operation_focus == FOCUS_CALCULATION:
+        self.is_extend_focused = False
+    else:
+        raise exceptions.ConfigurationValueError(
+            self.__class__,
+            'operation_focus',
+            operation_focus,
+            (FOCUS_EXTEND_APPEND, FOCUS_CALCULATION),
+        )
+
+    _shared_utility_buffer_init(self, dtype, recalc_threshold, maxlen)
+
+
+{{def shared_utility_buffer_append_locals()}}
+        # >>> shared_utility_buffer_append_locals >>>
+        cdef:
+            bint overwritten
+            # --- Generated overwritten, value locals ---
+            {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+            {{c_type}} overwritten_{{suffix}}{{', value_' + suffix if suffix != 'f64' else ''}}
+            {{endfor}}
+            # --------------------------------
+        # <<< shared_utility_buffer_append_locals <<<
+{{enddef}}
+
+{{def shared_utility_buffer_append_logic()}}
+            # >>> shared_utility_buffer_append_logic >>>
+            overwritten = overwritten_always_append[{{c_type}}](
+                <{{c_type}}*>self.buffer_ptr,
+                &self.write_head,
+                &self.size,
+                self._maxlen,
+                {{_value}},
+                &overwritten_{{suffix}},
+            )
+            # <<< shared_utility_buffer_append_logic <<<
+{{enddef}}
+
+{{def shared_operation_focus_append_logic()}}
+            # >>> shared_operation_focus_append_logic >>>
+            {{if not is_f64}}
+            value_{{suffix}} = <{{c_type}}> value
+
+            {{endif}}
+            if self.is_extend_focused:
+                overwritten_never_append[{{c_type}}](
+                    <{{c_type}}*>self.buffer_ptr,
+                    &self.write_head,
+                    &self.size,
+                    self._maxlen,
+                    {{_value}},
+                )
+                return
+
+{{shared_utility_buffer_append_logic()}}
+
+            # <<< shared_operation_focus_append_logic <<<
+{{enddef}}
+
+
+cdef class RunningMeanSqBuffer(_OperationFocusUtilityBufferBP):
+    def __cinit__(
+        self, maxlen, operation_focus, dtype={{SupportedDtype.F64.value}}, recalc_threshold = 0
+    ):
+        _shared_utility_buffer_init_with_operation_focus(
+            self, dtype, recalc_threshold, maxlen, operation_focus
+        )
+
+        # --- Generated sum_sq_accum init ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.sum_sq_accum_{{suffix}} = 0.0
+        self._accum_ptr_{{suffix}} = &self.sum_sq_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+        self._cached_mean_sq = NAN
+
+{{def recalc_sum_sq_conditional()}}
+self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.sum_squares_{{Suffixes.FP.value}}()
+{{enddef}}
+
+    cdef void append_c(self, double value) noexcept:
+{{shared_utility_buffer_append_locals()}}
+
+        self._cached_mean_sq = NAN
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _value = 'value' if is_f64 else 'value_' + suffix}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+
+{{shared_operation_focus_append_logic()}}
+
+            if overwritten:
+                self.sum_sq_accum_{{suffix}} += ({{_value}} * {{_value}}) - (overwritten_{{suffix}} * overwritten_{{suffix}})
+                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                    self.operations_since_recalc = self.size
+            else:
+                self.sum_sq_accum_{{suffix}} += {{_value}} * {{_value}}
+
+            self.operations_since_recalc += 1
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                {{recalc_sum_sq_conditional()}}
+                if isfinite(self.sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    def append(self, double value):
+        self.append_c(value)
+
+    cdef void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=True):
+        cdef:
+            size_t n = cnp.PyArray_DIM(block_np, 0)
+            cnp.ndarray overwritten_values
+            # --- Generated sum_sq_to_remove locals ---
+            {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+            {{c_type}} sum_sq_to_remove_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        if n == 0: return
+
+        self._cached_mean_sq = NAN
+
+        if self.is_extend_focused:
+            extend_never(self, block_np, warn_size)
+            return
+
+        if n >= self._maxlen:
+            extend_never(self, block_np, warn_size)
+            # --- Generated is_double dispatch ---
+            {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+            {{py: is_f64 = suffix == Suffixes.F64.value}}
+            {{'if self.is_double' if is_f64 else 'else'}}:
+                {{recalc_sum_sq_conditional()}}
+                if isfinite(self.sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False                
+            {{endfor}}
+            # --------------------------------
+            self.operations_since_recalc = 0
+            return
+
+        overwritten_values = extend_always(self, block_np, warn_size)
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            if cnp.PyArray_DIM(overwritten_values, 0):
+                sum_sq_to_remove_{{suffix}} = np.dot(overwritten_values, overwritten_values)
+                if (
+                    not self.accum_valid
+                    and not arr_isfinite_{{suffix}}(
+                        <{{c_type}}*> cnp.PyArray_DATA(overwritten_values),
+                        cnp.PyArray_DIM(overwritten_values, 0)
+                    )
+                ):
+                    self.operations_since_recalc = self.size
+            else:
+                sum_sq_to_remove_{{suffix}} = 0.0
+
+            self.sum_sq_accum_{{suffix}} += (<{{c_type}}>np.dot(block_np, block_np)) - sum_sq_to_remove_{{suffix}}
+
+            self.operations_since_recalc += n
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                {{recalc_sum_sq_conditional()}}
+                if isfinite(self.sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False                
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    cdef double mean_square_c(self) noexcept:
+        cdef bint should_recalc = False
+
+        if isfinite(self._cached_mean_sq):
+            return self._cached_mean_sq
+
+        if self.is_extend_focused:
+            self._cached_mean_sq = self.mean_squares_{{Suffixes.FP.value}}()
+            return self._cached_mean_sq
+
+        if not self.size:
+            self._cached_mean_sq = 0.0
+            return 0.0
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            if self.accum_valid:
+                if (
+                    (not isfinite(self.sum_sq_accum_{{suffix}}))
+                    or (self.sum_sq_accum_{{suffix}} < -ABS_TOL_{{suffix.upper()}})
+                ):
+                    should_recalc = True
+            elif self.operations_since_recalc >= self.size:
+                should_recalc = True
+
+            if should_recalc:
+                {{recalc_sum_sq_conditional()}}
+
+                if isfinite(self.sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+                    
+                self.operations_since_recalc = 0
+
+            self._cached_mean_sq = ({{'<double> ' if not is_f64 else ''}}self.sum_sq_accum_{{suffix}}) / self.size
+        {{endfor}}
+        # --------------------------------
+
+        return self._cached_mean_sq
+
+    def mean_square(self):
+        return self.mean_square_c()
+
+    cdef void clear_c(self) noexcept:
+        self.write_head = 0
+        self.size = 0
+
+        self._cached_mean_sq = NAN
+        # --- Generated sum_sq_accum reset ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.sum_sq_accum_{{suffix}} = 0.0
+        {{endfor}}
+        # --------------------------------
+        self.accum_valid = True
+        self.operations_since_recalc = 0
+    
+    cdef void clear_cache_c(self):
+        self._cached_mean_sq = NAN
+
+    cdef void recalculate_c(self):
+        self._cached_mean_sq = NAN
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            {{recalc_sum_sq_conditional()}}
+            if isfinite(self.sum_sq_accum_{{suffix}}):
+                self.accum_valid = True
+            else:
+                self.accum_valid = False
+        {{endfor}}
+        # --------------------------------
+        self.operations_since_recalc = 0
+
+    def __repr__(self) -> str:   
+        return (
+            f"<{self.__class__.__name__} at {hex(id(self))} : "
+            f"dtype={self._dtype.__name__}, len={self.size}, maxlen={self._maxlen}>"
+        )
+
+
+cdef class RunningMeanBuffer(_OperationFocusUtilityBufferBP):
+    def __cinit__(
+        self, maxlen, operation_focus, dtype={{SupportedDtype.F64.value}}, recalc_threshold = 0
+    ):
+
+        _shared_utility_buffer_init_with_operation_focus(
+            self, dtype, recalc_threshold, maxlen, operation_focus
+        )
+
+        # --- Generated sum_accum init ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.sum_accum_{{suffix}} = 0.0
+        self._accum_ptr_{{suffix}} = &self.sum_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+        self._cached_mean = NAN
+
+{{def recalc_sum_conditional()}}
+self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.sum_f()
+{{enddef}}
+
+    cdef void append_c(self, double value) noexcept:
+{{shared_utility_buffer_append_locals()}}
+        self._cached_mean = NAN
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _value = 'value' if is_f64 else 'value_' + suffix}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+{{shared_operation_focus_append_logic()}}
+            if overwritten:
+                self.sum_accum_{{suffix}} += {{_value}} - overwritten_{{suffix}}
+                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                    self.operations_since_recalc = self.size                
+            else:
+                self.sum_accum_{{suffix}} += {{_value}}
+
+            self.operations_since_recalc += 1
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                {{recalc_sum_conditional()}}
+                if isfinite(self.sum_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False                
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    def append(self, double value):
+        self.append_c(value)
+
+    cdef void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=True):
+        cdef:
+            size_t n = cnp.PyArray_DIM(block_np, 0)
+            cnp.ndarray overwritten_values
+            # --- Generated sum_to_remove locals ---
+            {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+            {{c_type}} sum_to_remove_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        if n == 0: return
+
+        self._cached_mean = NAN
+
+        if self.is_extend_focused:
+            extend_never(self, block_np, warn_size)
+            return
+
+        if n >= self._maxlen:
+            extend_never(self, block_np, warn_size)
+            # --- Generated is_double dispatch ---
+            {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+            {{py: is_f64 = suffix == Suffixes.F64.value}}
+            {{'if self.is_double' if is_f64 else 'else'}}:
+                {{recalc_sum_conditional()}}
+                if isfinite(self.sum_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+            {{endfor}}
+            # --------------------------------
+            self.operations_since_recalc = 0
+            return
+
+        overwritten_values = extend_always(self, block_np, warn_size)
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            if cnp.PyArray_DIM(overwritten_values, 0):
+                sum_to_remove_{{suffix}} = np.sum(overwritten_values, dtype=self._dtype)
+                if (
+                    not self.accum_valid
+                    and not arr_isfinite_{{suffix}}(
+                        <{{c_type}}*> cnp.PyArray_DATA(overwritten_values),
+                        cnp.PyArray_DIM(overwritten_values, 0)
+                    )
+                ):
+                    self.operations_since_recalc = self.size                
+            else:
+                sum_to_remove_{{suffix}} = 0.0
+            
+            self.sum_accum_{{suffix}} += (<{{c_type}}>np.sum(block_np, dtype=self._dtype)) - sum_to_remove_{{suffix}}
+
+            self.operations_since_recalc += n
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                {{recalc_sum_conditional()}}
+                if isfinite(self.sum_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    cdef double mean_c(self) noexcept:
+        cdef bint should_recalc = False
+        
+        if isfinite(self._cached_mean):
+            return self._cached_mean
+
+        if self.is_extend_focused:
+            self._cached_mean = self.mean_f()
+            return self._cached_mean
+
+        if not self.size:
+            self._cached_mean = 0.0
+            return 0.0
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            if self.accum_valid:
+                if not isfinite(self.sum_accum_{{suffix}}):
+                    should_recalc = True
+            elif self.operations_since_recalc >= self.size:
+                should_recalc = True
+
+            if should_recalc:
+                {{recalc_sum_conditional()}}
+
+                if isfinite(self.sum_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+                    
+                self.operations_since_recalc = 0                
+
+            self._cached_mean = ({{'<double> ' if not is_f64 else ''}}self.sum_accum_{{suffix}}) / self.size
+        {{endfor}}
+        # --------------------------------
+
+        return self._cached_mean
+
+    def mean(self):
+        return self.mean_c()
+
+    cdef void clear_c(self) noexcept:
+        self.write_head = 0
+        self.size = 0
+
+        self._cached_mean = NAN
+        # --- Generated sum_accum reset ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.sum_accum_{{suffix}} = 0.0
+        {{endfor}}
+        # --------------------------------
+        self.accum_valid = True
+        self.operations_since_recalc = 0
+
+    cdef void clear_cache_c(self):
+        self._cached_mean = NAN
+
+    cdef void recalculate_c(self):
+        self._cached_mean = NAN
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            {{recalc_sum_conditional()}}
+            if isfinite(self.sum_accum_{{suffix}}): 
+                self.accum_valid = True
+            else:
+                self.accum_valid = False
+        {{endfor}}
+        # --------------------------------
+        self.operations_since_recalc = 0
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} at {hex(id(self))} : "
+            f"dtype={self._dtype.__name__}, len={self.size}, maxlen={self._maxlen}>"
+        )
+
+
+cdef class IntegratedGatedBuffer(_UtilityBufferBP):
+    def __cinit__(
+        self,
+        maxlen,
+        double abs_gate_lufs,
+        double rel_gate_lu,
+        dtype = {{SupportedDtype.F64.value}},
+        recalc_threshold = 0,
+    ):
+
+        _shared_utility_buffer_init(self, dtype, recalc_threshold, maxlen)
+
+        for name, value in (
+            ("abs_gate_lufs", abs_gate_lufs),
+            ("rel_gate_lu", rel_gate_lu),
+        ):
+            if isnan(value) or value == INFINITY:
+                raise exceptions.ConfigurationValueError(
+                    self.__class__,
+                    name,
+                    value,
+                    {"min": -INFINITY, "max": 1.7976931348623157e308},
+                )
+
+        self.abs_gate_lin_sq = 10**((abs_gate_lufs - 0.691) / 10.0)
+        self.rel_gate_lin_sq_factor = 10**(rel_gate_lu / 10.0)
+
+        # --- Generated abs_gated_sum_sq_accum init ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.abs_gated_sum_sq_accum_{{suffix}} = 0.0
+        self._accum_ptr_{{suffix}} = &self.abs_gated_sum_sq_accum_{{suffix}}
+        {{endfor}}
+        # --------------------------------
+        self.abs_gated_count_accum = 0
+        self._cached_gated_mean_sq = NAN
+
+    cdef void append_c(self, double value) noexcept:
+{{shared_utility_buffer_append_locals()}}
+            # --- Generated result locals ---
+            {{for suffix, _, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+            {{struct_type}} result_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        self._cached_gated_mean_sq = NAN
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _value = 'value' if is_f64 else 'value_' + suffix}}
+        {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '> self.abs_gate_lin_sq'}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            {{if not is_f64}}
+            value_{{suffix}} = <{{c_type}}> value
+            {{endif}}
+            {{_value}} *= {{_value}}
+
+{{shared_utility_buffer_append_logic()}}
+            if (
+                overwritten
+                and (
+                    overwritten_{{suffix}} > {{_abs_gate_lin_sq}}
+                    or isnan(overwritten_{{suffix}})
+                )
+            ):
+                self.abs_gated_sum_sq_accum_{{suffix}} -= overwritten_{{suffix}}
+                self.abs_gated_count_accum -= 1
+
+                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                    self.operations_since_recalc = self.size
+
+            if {{_value}} > {{_abs_gate_lin_sq}} or isnan({{_value}}):
+                self.abs_gated_sum_sq_accum_{{suffix}} += {{_value}}
+                self.abs_gated_count_accum += 1
+
+            self.operations_since_recalc += 1
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_abs_gate_lin_sq}})
+                self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
+                self.abs_gated_count_accum = result_{{suffix}}.count
+
+                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    def append(self, double value):
+        self.append_c(value)
+
+    cdef void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=True):
+        cdef:
+            size_t n = cnp.PyArray_DIM(block_np, 0)
+            size_t count_to_remove
+            cnp.ndarray overwritten_values, sq_block_np
+            # --- Generated sum_sq_to_remove, result locals ---
+            {{for suffix, c_type, _, _ in FP_SUM_COUNT_GROUPS}}
+            {{c_type}} sum_sq_to_remove_{{suffix}}
+            {{endfor}}    
+            {{for suffix, _, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+            {{struct_type}} result_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        if n == 0: return
+
+        self._cached_gated_mean_sq = NAN
+        sq_block_np = block_np * block_np
+
+        if n >= self._maxlen:
+            extend_never(self, sq_block_np, warn_size)
+            # --- Generated is_double dispatch ---
+            {{for suffix, c_type, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+            {{py: is_f64 = suffix == Suffixes.F64.value}}
+            {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '> self.abs_gate_lin_sq'}}
+            {{'if self.is_double' if is_f64 else 'else'}}:
+                result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_abs_gate_lin_sq}})
+                self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
+                self.abs_gated_count_accum = result_{{suffix}}.count
+
+                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+
+            {{endfor}}
+            # --------------------------------
+            self.operations_since_recalc = 0
+            return
+        
+        overwritten_values = extend_always(self, sq_block_np, warn_size)
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: is_f32 = suffix == Suffixes.F32.value}}
+        {{py: _recalc_abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '> self.abs_gate_lin_sq'}}
+        {{py: _abs_gate_lin_sq = 'abs_gate_lin_sq_f32_np' if is_f32 else 'self.abs_gate_lin_sq'}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            {{if is_f32}}
+            abs_gate_lin_sq_f32_np = np.float32(self.abs_gate_lin_sq)
+
+            {{endif}}
+            if cnp.PyArray_DIM(overwritten_values, 0):
+                gated_to_remove_mask = (overwritten_values > {{_abs_gate_lin_sq}}) | np.isnan(overwritten_values)
+                sum_sq_to_remove_{{suffix}} = np.dot(overwritten_values, gated_to_remove_mask)
+                count_to_remove = np.count_nonzero(gated_to_remove_mask)
+
+                if (
+                    not self.accum_valid
+                    and not arr_isfinite_{{suffix}}(
+                        <{{c_type}}*> cnp.PyArray_DATA(overwritten_values),
+                        cnp.PyArray_DIM(overwritten_values, 0)
+                    )
+                ):
+                    self.operations_since_recalc = self.size
+
+            else:
+                sum_sq_to_remove_{{suffix}} = 0.0
+                count_to_remove = 0
+
+            gated_to_add_mask = (sq_block_np > {{_abs_gate_lin_sq}}) | np.isnan(sq_block_np)
+            self.abs_gated_sum_sq_accum_{{suffix}} += (<{{c_type}}>np.dot(sq_block_np, gated_to_add_mask)) - sum_sq_to_remove_{{suffix}}
+            self.abs_gated_count_accum += (<size_t>np.count_nonzero(gated_to_add_mask)) - count_to_remove
+
+            self.operations_since_recalc += n
+            if (
+                self.recalc_threshold
+                and self.operations_since_recalc >= self.recalc_threshold
+            ):
+                result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_recalc_abs_gate_lin_sq}})
+                self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
+                self.abs_gated_count_accum = result_{{suffix}}.count
+
+                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+
+                self.operations_since_recalc = 0
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+    cdef double gated_mean_square_c(self) noexcept:
+        cdef:
+            size_t final_gated_count
+            # --- Generated final_gated_sum_sq, result locals ---
+            {{for suffix, c_type, _, _ in FP_SUM_COUNT_GROUPS}}
+            {{c_type}} final_gated_sum_sq_{{suffix}}
+            {{endfor}}
+            {{for suffix, _, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+            {{struct_type}} result_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+            bint should_recalc = False
+
+        if isfinite(self._cached_gated_mean_sq):
+            return self._cached_gated_mean_sq
+
+        if not self.abs_gated_count_accum:
+            self._cached_gated_mean_sq = 0.0
+            return 0.0
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '>self.abs_gate_lin_sq'}}
+        {{py: _rel_gate_lin_sq_factor = 'self.rel_gate_lin_sq_factor' if is_f64 else '<' + c_type + '>self.rel_gate_lin_sq_factor'}}
+        {{py: _max_func = 'fmaxf' if suffix == Suffixes.F32.value else 'fmax'}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            if self.accum_valid:
+                if (
+                    (not isfinite(self.abs_gated_sum_sq_accum_{{suffix}}))
+                    or (self.abs_gated_sum_sq_accum_{{suffix}} < -ABS_TOL_{{suffix.upper()}})
+                ):
+                    should_recalc = True
+            elif self.operations_since_recalc >= self.size:
+                should_recalc = True
+
+            if should_recalc:
+                result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_abs_gate_lin_sq}})
+                self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
+                self.abs_gated_count_accum = result_{{suffix}}.count
+
+                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                    self.accum_valid = True
+                else:
+                    self.accum_valid = False
+                    
+                self.operations_since_recalc = 0
+
+            if not isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                self._cached_gated_mean_sq = self.abs_gated_sum_sq_accum_{{suffix}}
+                return self._cached_gated_mean_sq
+
+            result_{{suffix}} = self.sum_and_count_gt_{{suffix}}(
+                {{_max_func}}(
+                    {{_abs_gate_lin_sq}},
+                    (self.abs_gated_sum_sq_accum_{{suffix}} / self.abs_gated_count_accum) * {{_rel_gate_lin_sq_factor}}
+                )
+            )
+            final_gated_sum_sq_{{suffix}} = result_{{suffix}}.sum
+            final_gated_count = result_{{suffix}}.count
+
+            if not final_gated_count:
+                self._cached_gated_mean_sq = 0.0
+                return 0.0
+
+            self._cached_gated_mean_sq = final_gated_sum_sq_{{suffix}} / final_gated_count
+        {{''}}
+        {{endfor}}
+        # --------------------------------
+
+        return self._cached_gated_mean_sq
+
+    def gated_mean_square(self):
+        return self.gated_mean_square_c()
+
+    cdef void clear_c(self) noexcept:
+        self.write_head = 0
+        self.size = 0
+        
+        self._cached_gated_mean_sq = NAN
+        # --- Generated abs_gated_sum_sq_accum reset ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        self.abs_gated_sum_sq_accum_{{suffix}} = 0.0
+        {{endfor}}
+        # --------------------------------
+        self.abs_gated_count_accum = 0
+        self.accum_valid = True
+        self.operations_since_recalc = 0
+
+    cdef void clear_cache_c(self):
+        self._cached_gated_mean_sq = NAN
+
+    cdef void recalculate_c(self):
+        cdef:
+            # --- Generated result locals ---
+            {{for suffix, _, struct_type, _ in FP_SUM_COUNT_GROUPS}}
+            {{struct_type}} result_{{suffix}}
+            {{endfor}}
+            # --------------------------------
+
+        self._cached_gated_mean_sq = NAN
+        # --- Generated is_double dispatch ---
+        {{for suffix, c_type, _, _ in FP_SUM_COUNT_GROUPS}}
+        {{py: is_f64 = suffix == Suffixes.F64.value}}
+        {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '> self.abs_gate_lin_sq'}}
+        {{'if self.is_double' if is_f64 else 'else'}}:
+            result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_abs_gate_lin_sq}})
+            self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
+            self.abs_gated_count_accum = result_{{suffix}}.count
+            if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                self.accum_valid = True
+            else:
+                self.accum_valid = False            
+        {{endfor}}
+        # --------------------------------
+        self.operations_since_recalc = 0
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} at {hex(id(self))} : "
+            f"dtype={self._dtype.__name__}, len={self.size}, maxlen={self._maxlen}>"
+        )
+
+    def _current_abs_gated_mean_sq(self) -> float:
+        if self.abs_gated_count_accum == 0:
+            return 0.0
+
+        # --- Generated is_double dispatch ---
+        {{for suffix, _, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
+        {{'if self.is_double' if suffix == Suffixes.F64.value else 'else'}}:
+            return self.abs_gated_sum_sq_accum_{{suffix}} / self.abs_gated_count_accum
+        {{endfor}}
+        # --------------------------------

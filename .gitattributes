@@ -1,0 +1,5 @@
+* linguist-detectable=false
+src/** linguist-detectable=true
+*.pyx.in linguist-language=Cython
+*.pxd.in linguist-language=Cython
+*.pyi linguist-documentation

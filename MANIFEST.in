@@ -1,0 +1,33 @@
+# Include source files
+recursive-include src/numcircbuf *.py *.pyx *.pxd *.pyi *.hpp
+exclude src/numcircbuf/_build_helpers.py
+exclude src/numcircbuf/_test_cython_api.pyx
+
+# Include documentation files
+include README.md
+include LICENSE
+
+# Include configuration/build files
+include MANIFEST.in
+include pyproject.toml
+include setup.py
+
+# Exclude unnecessary files
+prune .git
+prune __pycache__
+prune *.pyc
+prune *.pyo
+prune *.pyd
+prune *.so
+prune *.egg-info
+prune build
+prune dist
+prune .mypy_cache
+prune .pytest_cache
+prune .vscode
+prune .idea
+prune .tox
+prune venv
+prune env
+prune *.egg
+prune *.egg-info

@@ -1,0 +1,31 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temp folders
+tmp/
+
+# Build / dist folders
+build/
+dist/
+*.egg-info/
+
+# Compiled Cython / C
+src/numcircbuf/*.cpp
+src/numcircbuf/*.pyd
+src/numcircbuf/*.so
+
+# Generated Cython
+src/numcircbuf/core.pyx
+src/numcircbuf/core.pxd
+
+# Debugging Files
+**/core.html
+**/core.asm
+
+# IDE / OS / Checkers
+.vscode/
+.idea/
+.DS_Store
+.mypy_cache

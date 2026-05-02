@@ -1,0 +1,82 @@
+name: Memory Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "MANIFEST.in"
+
+jobs:
+  mem_check:
+    name: Memory Safety (Valgrind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install System Deps
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download Valgrind Suppression File
+        run: |
+          wget https://raw.githubusercontent.com/python/cpython/3.12/Misc/valgrind-python.supp -O python.supp
+
+      - name: Build with Debug Symbols
+        env:
+          DEBUG_BUILD: "1"
+        run: pip install .[test]
+
+      - name: Run Tests under Valgrind
+        env:
+          PYTHONMALLOC: malloc
+          IS_VALGRIND: "1"
+        run: |
+          cat <<EOF > local.supp
+          {
+             Ignore_Python_Direct_Leaks
+             Memcheck:Leak
+             match-leak-kinds: definite,possible
+             fun:*alloc
+             obj:/*/libpython3.12.so*
+          }
+          {
+             Ignore_NumPy_Direct_Leaks
+             Memcheck:Leak
+             match-leak-kinds: definite,possible
+             fun:*alloc
+             obj:*/numpy/*
+          }
+          {
+             Ignore_Ctypes_and_Threads
+             Memcheck:Leak
+             match-leak-kinds: definite,possible
+             fun:*alloc
+             obj:/*/lib/python3.12/lib-dynload/*
+          }
+          {
+             Ignore_Cython_Globals_Init
+             Memcheck:Leak
+             match-leak-kinds: definite,possible
+             fun:*alloc
+             ...
+             fun:__Pyx_FetchCommonTypeFromSpec
+          }
+          EOF
+
+          valgrind --tool=memcheck \
+                   --leak-check=full \
+                   --track-origins=yes \
+                   --suppressions=python.supp \
+                   --suppressions=local.supp \
+                   --show-leak-kinds=definite \
+                   --errors-for-leak-kinds=definite \
+                   --error-exitcode=1 \
+                   python -m pytest
