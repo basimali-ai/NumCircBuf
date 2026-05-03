@@ -724,7 +724,7 @@ If you use NumCircBuf in your research or projects, please cite it as:
   title = {NumCircBuf: High-Performance Numerical Circular Buffers for Python},
   year = {2026},
   url = {https://github.com/basimali-ai/NumCircBuf},
-  version = {0.1.0}
+  version = {1.0.0}
 }
 ```
 
