@@ -145,7 +145,10 @@ Write-optimized circular buffer with auto-overwrite and non-destructive reads.
 
 Provides simple vectorized mathematical metrics over the buffer contents.
 
-**Note:** This buffer is not thread safe. Concurrent writes can cause data corruption.
+**Note:** This buffer is not thread safe.
+
+- Concurrent reads during writes can provide inaccurate data
+- Concurrent writes can cause data corruption.
 
 #### Constructor
 
@@ -480,7 +483,7 @@ rng = np.random.default_rng(25)  # For random number generation
 for i in range(10):  # Simulate time
     block = rng.random(BLOCK_SIZE, dtype=DTYPE)  # Mock block arriving
     buffer.extend(block)  # Extend with the block
-    if i % CALC_EVERY:  # Calc every n
+    if (i + 1) % CALC_EVERY == 0:  # Calc every n
         print("-" * 10)
         print(buffer.mean_square())  # Get mean-square
         print(buffer.mean_square())  # Uses cached value
