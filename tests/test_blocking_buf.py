@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 import time
 
@@ -37,6 +38,10 @@ except ImportError:
         HAS_C_TESTS = False
 
 from .constants import CAPACITIES, SUPPORTED_DTYPES_ALL, DTYPE_TO_SUFFIX
+
+is_valgrind = os.getenv("IS_VALGRIND", "0") == "1"
+
+TIMEOUT = 120 if is_valgrind else 60
 
 
 @pytest.mark.parametrize("capacity", CAPACITIES)
@@ -70,9 +75,9 @@ def test_blocking_read(capacity, dtype):
         started.clear()
         t = threading.Thread(target=target)
         t.start()
-        started.wait(timeout=10)
+        started.wait(timeout=TIMEOUT)
         buf.write_extend(data)
-        t.join(timeout=10)
+        t.join(timeout=TIMEOUT)
 
     def consumer_read():
         started.set()
@@ -178,8 +183,8 @@ def test_high_speed_handoff(capacity, dtype):
     c.start()
     p.start()
 
-    p.join(timeout=10)
-    c.join(timeout=10)
+    p.join(timeout=TIMEOUT)
+    c.join(timeout=TIMEOUT)
 
     assert not c.is_alive()
     assert not p.is_alive()
@@ -238,12 +243,12 @@ def test_multi_thread_ticket_skips(capacity, dtype):
                 args=args,
             )
             t.start()
-            started.wait(timeout=10)
+            started.wait(timeout=TIMEOUT)
             threads.append(t)
             started.clear()
         buf.write_extend_unchecked(np.array([1, 2, 3, 4, 5, 6], dtype=dtype))
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=TIMEOUT)
 
     def producer_append(value, timeout, expected_return: bool):
         started.set()
@@ -314,12 +319,12 @@ def test_multi_thread_ticket_skips(capacity, dtype):
                 args=args,
             )
             t.start()
-            started.wait(timeout=10)
+            started.wait(timeout=TIMEOUT)
             threads.append(t)
             started.clear()
         buf.read()
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=TIMEOUT)
         res = buf.read()
         assert np.array_equal(res, expected)
 
@@ -403,7 +408,7 @@ def test_multi_thread_stress_with_partial_reads(capacity, dtype):
         thread.start()
 
     for thread in threads:
-        thread.join(timeout=10)
+        thread.join(timeout=TIMEOUT)
 
     for thread in threads:
         assert not thread.is_alive()
@@ -429,12 +434,12 @@ def test_read_ordering(capacity, dtype):
         for _ in range(_n_test_threads):
             t = threading.Thread(target=target)
             t.start()
-            started.wait(timeout=10)
+            started.wait(timeout=TIMEOUT)
             threads.append(t)
             started.clear()
         buf.write_extend_unchecked(data)
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=TIMEOUT)
 
     def consumer_read():
         started.set()
@@ -484,12 +489,12 @@ def test_write_ordering(capacity, dtype):
                 args=(parts[i],) if not append_mode else (parts[i][0],),
             )
             t.start()
-            started.wait(timeout=10)
+            started.wait(timeout=TIMEOUT)
             threads.append(t)
             started.clear()
         buf.clear()
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=TIMEOUT)
 
     def producer_extend(arr):
         started.set()
