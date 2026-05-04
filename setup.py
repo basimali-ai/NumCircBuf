@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from setuptools import setup, Extension, find_packages
+from setuptools.command.build_py import build_py
 from Cython.Build import cythonize
 import Cython.Tempita as tempita
 import numpy as np
@@ -33,6 +34,21 @@ annotate_cython = os.getenv("CYTHON_ANNOTATE", "0") == "1"
 only_test_api = os.getenv("ONLY_TEST_API", "0") == "1"
 
 is_test = only_test_api or test_build or debug_build or coverage_build
+
+
+class FilteredBuildPy(build_py):
+    """Intercept the Python module discovery and remove targeted modules."""
+
+    _filtered_build_py_excluded_modules = ("_build_helpers",)
+
+    def find_package_modules(self, package, package_dir):
+        modules = super().find_package_modules(package, package_dir)
+        filtered_modules = [
+            (pkg, mod, filepath)
+            for (pkg, mod, filepath) in modules
+            if mod not in self._filtered_build_py_excluded_modules
+        ]
+        return filtered_modules
 
 
 def insert_autogen_notice(content: str, notice: str) -> str:
@@ -98,8 +114,9 @@ define_macros: list[tuple[str, str]] = []
 if coverage_build:
     define_macros.extend([("CYTHON_TRACE", "1"), ("CYTHON_TRACE_NOGIL", "1")])
 
-
 extensions = []
+exclude_pkg_data = ["core.cpp", "_test_cython_api.cpp"]
+
 if not only_test_api:
     process_tempita(src_dir / f"{core_file_name}.pxd.in")
     pyx_file = process_tempita(src_dir / f"{core_file_name}.pyx.in")
@@ -134,10 +151,12 @@ if is_test:
             extra_link_args=extra_link_args,
         )
     )
+else:
+    exclude_pkg_data.append("_test_cython_api.pyx")
 
 setup(
     name="NumCircBuf",
-    version="1.0.0",
+    version="1.0.1",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -170,9 +189,15 @@ setup(
             "sphinx-rtd-theme>=1.3",
         ],
     },
+    cmdclass={
+        "build_py": FilteredBuildPy,
+    },
     packages=find_packages(),
     package_data={
-        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx"],
+        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx", ".hpp"],
+    },
+    exclude_package_data={
+        "numcircbuf": exclude_pkg_data,
     },
     include_package_data=True,
     ext_modules=cythonize(

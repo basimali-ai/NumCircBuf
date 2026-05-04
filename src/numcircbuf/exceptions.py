@@ -13,10 +13,11 @@
 # limitations under the License.
 
 """
-Custom exceptions for NumCircBuf library.
+Custom exceptions and warnings for the NumCircBuf library.
 
-This module defines specific exception classes for better error handling
-and more descriptive error messages throughout the library.
+Defines a hierarchy of descriptive error and warning classes. All
+exceptions inherit from the base `NumCircBufError`, and all warnings
+inherit from `NumCircBufWarning`, allowing for granular error handling.
 """
 
 from __future__ import annotations

@@ -34,9 +34,6 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-numcircbuf = ["*.pyi", "*.pxd", "*.pyx", "*.cpp", ".hpp"]
-
 [tool.cibuildwheel]
 test-requires = ["pytest", "pytest-mock", "numpy", "cython"]
 before-test = [

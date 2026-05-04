@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+NumCircBuf: High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.
+
+Source Code & Documentation:
+https://github.com/basimali-ai/NumCircBuf
+"""
+
 from importlib.metadata import version
 
 from .core import (

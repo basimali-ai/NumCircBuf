@@ -1,7 +1,5 @@
 # Include source files
 recursive-include src/numcircbuf *.py *.pyx *.pxd *.pyi *.hpp
-exclude src/numcircbuf/_build_helpers.py
-exclude src/numcircbuf/_test_cython_api.pyx
 
 # Include documentation files
 include README.md

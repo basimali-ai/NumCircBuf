@@ -66,8 +66,6 @@ from libc.math cimport (
     fmaxf,
 )
 from libc.stdint cimport ( 
-    int64_t,
-    uint32_t,
     uintptr_t,
     SIZE_MAX,
     UINT64_MAX,

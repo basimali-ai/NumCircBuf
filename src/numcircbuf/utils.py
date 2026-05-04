@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+General utility helpers for the NumCircBuf library.
+
+Contains internal helper tools, including a custom `classproperty`
+decorator and the `determine_operation_focus` logic used to optimize
+buffer behavior based on specific workload types.
+"""
+
 from __future__ import annotations
 import logging
 import time

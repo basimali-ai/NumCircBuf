@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Internal and public constants for the NumCircBuf library.
+
+Defines minimum/maximum bounds for common numeric types and supported
+NumPy-compatible data types. Includes typical architecture-standard
+constants, such as common cache line and memory page sizes.
+"""
+
 from enum import IntEnum, Enum
 import ctypes
 import sys

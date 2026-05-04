@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+System information and environment diagnostic utilities.
+
+Provides functions to retrieve hardware-specific details, including
+CPU L3 cache size, CPU cache line size, and available system RAM,
+enabling the library to make hardware-aware optimization decisions.
+"""
+
 from __future__ import annotations
 import os
 import sys

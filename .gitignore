@@ -19,6 +19,7 @@ src/numcircbuf/*.so
 # Generated Cython
 src/numcircbuf/core.pyx
 src/numcircbuf/core.pxd
+src/numcircbuf/_test_cython_api.pyx
 
 # Debugging Files
 **/core.html

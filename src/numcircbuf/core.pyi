@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Core implementations of high-performance circular buffers and statistical accumulators.
+
+This module provides the primary Cython-optimized classes for the NumCircBuf
+library. It contains self-contained buffer structures designed for high-speed
+numerical data ingestion and provides O(1) complexity for rolling
+statistical calculations.
+"""
+
 from __future__ import annotations
 from typing import Iterable, Literal
 

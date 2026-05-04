@@ -108,7 +108,7 @@ The Cython and C++ layer APIs, including any public methods exposed at that leve
 
 ### For Library Users
 
-1. **Use version specifiers**: Pin to the current major version (e.g., `numcircbuf < 1.0.0`) to prevent breaking changes from being installed automatically.
+1. **Use version specifiers**: Pin to the current major version to prevent breaking changes from being installed automatically.
 2. **Test before upgrading**: Especially for minor/major version updates
 3. **Monitor deprecation warnings**: Plan for upcoming changes
 4. **Review changelogs**: Understand what's changing between versions

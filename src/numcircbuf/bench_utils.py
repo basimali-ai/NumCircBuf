@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Benchmarking utilities for the NumCircBuf library.
+
+This module provides a suite of performance tests to compare NumCircBuf
+against custom buffers and structures defined in `numcircbuf.protocols`.
+It includes tools for measuring the throughput of circular buffer operations
+and statistical accumulators/functions.
+"""
+
 from __future__ import annotations
 import logging
 from typing import Callable, Any
