@@ -67,7 +67,7 @@ class BlockingCircBuffer:
             | type[np.int64]
             | type[np.uint32]
             | type[np.uint64]
-        ) = np.float32,
+        ) = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -81,7 +81,7 @@ class BlockingCircBuffer:
             | type[np.int64]
             | type[np.uint32]
             | type[np.uint64]
-        )
+        ) = np.float64
         """
 
     def write_append(self, value: float | int, timeout: float = -1) -> bool:
@@ -350,7 +350,7 @@ class OverwriteCircBuffer:
             | type[np.int64]
             | type[np.uint32]
             | type[np.uint64]
-        ) = np.float32,
+        ) = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -388,7 +388,7 @@ class OverwriteCircBuffer:
             | type[np.int64]
             | type[np.uint32]
             | type[np.uint64]
-        )
+        ) = np.float64
         """
 
     def append(
@@ -560,7 +560,7 @@ class RunningMeanSqBuffer:
         maxlen: int,
         operation_focus: Literal["extend/append", "calculation"],
         recalc_threshold: int | None = 0,
-        dtype: type[np.float32] | type[np.float64] = np.float32,
+        dtype: type[np.float32] | type[np.float64] = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -588,7 +588,7 @@ class RunningMeanSqBuffer:
         :type recalc_threshold: Optional[int]
 
         :param dtype: NumPy dtype to use for the buffer.
-        :type dtype: type[np.float32] | type[np.float64] = np.float32
+        :type dtype: type[np.float32] | type[np.float64] = np.float64
         """
 
     def clear_cache(self) -> None:
@@ -689,7 +689,7 @@ class RunningMeanBuffer:
         self,
         maxlen: int,
         operation_focus: Literal["extend/append", "calculation"],
-        dtype: type[np.float32] | type[np.float64] = np.float32,
+        dtype: type[np.float32] | type[np.float64] = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -711,7 +711,7 @@ class RunningMeanBuffer:
         :type operation_focus: Literal["extend/append", "calculation"]
 
         :param dtype: NumPy dtype to use for the buffer.
-        :type dtype: type[np.float32] | type[np.float64] = np.float32
+        :type dtype: type[np.float32] | type[np.float64] = np.float64
         """
 
     def clear_cache(self) -> None:
@@ -820,7 +820,7 @@ class IntegratedGatedBuffer:
         abs_gate_lufs: float,
         rel_gate_lu: float,
         recalc_threshold: int | None = 0,
-        dtype: type[np.float32] | type[np.float64] = np.float32,
+        dtype: type[np.float32] | type[np.float64] = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -849,7 +849,7 @@ class IntegratedGatedBuffer:
         :type recalc_threshold: Optional[int]
 
         :param dtype: NumPy dtype to use for the buffer.
-        :type dtype: type[np.float32] | type[np.float64] = np.float32
+        :type dtype: type[np.float32] | type[np.float64] = np.float64
         """
 
     def clear_cache(self) -> None:

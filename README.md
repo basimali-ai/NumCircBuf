@@ -164,7 +164,7 @@ def __init__(
         | type[np.int64]
         | type[np.uint32]
         | type[np.uint64]
-    ) = np.float32,
+    ) = np.float64,
 ) -> None:
 ```
 
@@ -257,7 +257,7 @@ def __init__(
         | type[np.int64]
         | type[np.uint32]
         | type[np.uint64]
-    ) = np.float32,
+    ) = np.float64,
 ) -> None:
 ```
 
@@ -414,7 +414,7 @@ def __init__(
     maxlen: int,
     operation_focus: Literal["extend/append", "calculation"],
     recalc_threshold: int | None = 0,
-    dtype: type[np.float32] | type[np.float64] = np.float32,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> None:
 ```
 
@@ -507,7 +507,7 @@ def __init__(
     self,
     maxlen: int,
     operation_focus: Literal["extend/append", "calculation"],
-    dtype: type[np.float32] | type[np.float64] = np.float32,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> None:
 ```
 
@@ -541,7 +541,7 @@ def __init__(
     abs_gate_lufs: float,
     rel_gate_lu: float,
     recalc_threshold: int | None = 0,
-    dtype: type[np.float32] | type[np.float64] = np.float32,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> None:
 ```
 
@@ -727,7 +727,7 @@ If you use NumCircBuf in your research or projects, please cite it as:
   title = {NumCircBuf: High-Performance Numerical Circular Buffers for Python},
   year = {2026},
   url = {https://github.com/basimali-ai/NumCircBuf},
-  version = {1.0.1}
+  version = {1.0.2}
 }
 ```
 

@@ -25,3 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **README**: Clarify `OverwriteCircBuffer` thread safety.
 - Add short library description and source link to `__init__.py`.
 - Add module-level docstrings to all core components and utilities.
+
+## [1.0.2] - 2026-05-06
+
+### Fixed
+
+- Corrected default buffer `dtype` hints and documentation. Previous versions incorrectly suggested `float32` instead of `float64`, which could lead to memory corruption, resulting in data corruption or segmentation faults when using `unchecked` methods.

@@ -73,31 +73,35 @@ _write_extend_unchecked = lambda buf, np_block: buf.write_extend_unchecked(
 )
 MAIN_BUFFERS = {
     "OverwriteCircBuffer_never": {
-        "init": lambda maxlen, dtype: OverwriteCircBuffer(
-            maxlen, "never", dtype
+        "init": lambda maxlen, dtype=None: OverwriteCircBuffer(
+            maxlen, "never", **({"dtype": dtype} if dtype is not None else {})
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "OverwriteCircBuffer_always": {
-        "init": lambda maxlen, dtype: OverwriteCircBuffer(
-            maxlen, "always", dtype
+        "init": lambda maxlen, dtype=None: OverwriteCircBuffer(
+            maxlen, "always", **({"dtype": dtype} if dtype is not None else {})
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "OverwriteCircBuffer_conditional": {
-        "init": lambda maxlen, dtype: OverwriteCircBuffer(
-            maxlen, "conditional", dtype
+        "init": lambda maxlen, dtype=None: OverwriteCircBuffer(
+            maxlen,
+            "conditional",
+            **({"dtype": dtype} if dtype is not None else {}),
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "BlockingCircBuffer": {
-        "init": lambda maxlen, dtype: BlockingCircBuffer(maxlen, dtype),
+        "init": lambda maxlen, dtype=None: BlockingCircBuffer(
+            maxlen, **({"dtype": dtype} if dtype is not None else {})
+        ),
         "append": _write_append,
         "extend": _write_extend,
         "extend_unchecked": _write_extend_unchecked,
@@ -105,40 +109,48 @@ MAIN_BUFFERS = {
 }
 UTIL_BUFFERS = {
     "RunningMeanSqBuffer_extend/append": {
-        "init": lambda maxlen, dtype: RunningMeanSqBuffer(
-            maxlen, "extend/append", dtype
+        "init": lambda maxlen, dtype=None: RunningMeanSqBuffer(
+            maxlen,
+            "extend/append",
+            **({"dtype": dtype} if dtype is not None else {}),
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "RunningMeanBuffer_extend/append": {
-        "init": lambda maxlen, dtype: RunningMeanBuffer(
-            maxlen, "extend/append", dtype
+        "init": lambda maxlen, dtype=None: RunningMeanBuffer(
+            maxlen,
+            "extend/append",
+            **({"dtype": dtype} if dtype is not None else {}),
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "RunningMeanSqBuffer_calculation": {
-        "init": lambda maxlen, dtype: RunningMeanSqBuffer(
-            maxlen, "calculation", dtype
+        "init": lambda maxlen, dtype=None: RunningMeanSqBuffer(
+            maxlen,
+            "calculation",
+            **({"dtype": dtype} if dtype is not None else {}),
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "RunningMeanBuffer_calculation": {
-        "init": lambda maxlen, dtype: RunningMeanBuffer(
-            maxlen, "calculation", dtype
+        "init": lambda maxlen, dtype=None: RunningMeanBuffer(
+            maxlen,
+            "calculation",
+            **({"dtype": dtype} if dtype is not None else {}),
         ),
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
     },
     "IntegratedGatedBuffer": {
-        "init": lambda maxlen, dtype: IntegratedGatedBuffer(
-            maxlen, -70, 10, dtype
+        "init": lambda maxlen, dtype=None: IntegratedGatedBuffer(
+            maxlen, -70, 10, **({"dtype": dtype} if dtype is not None else {})
         ),
         "append": _append,
         "extend": _extend,
@@ -159,15 +171,33 @@ ALL_BUFFERS_IDS = MAIN_BUFFERS_IDS + UTIL_BUFFERS_IDS
 @pytest.mark.parametrize(
     "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
 )
+def test_default_dtype(buf_name, buf_funcs):
+    expected_dtype = np.float64
+
+    buf = buf_funcs["init"](5)
+    assert buf.dtype is expected_dtype
+
+    arr = np.array([(i + 1) for i in range(5)], dtype=expected_dtype)
+    buf_funcs["extend_unchecked"](buf, arr)
+
+    if buf_name != "IntegratedGatedBuffer":
+        assert np.array_equal(buf.view()[:], arr)
+    else:
+        assert np.allclose(buf.view()[:], arr**2)
+
+
+@pytest.mark.parametrize(
+    "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
+)
 @pytest.mark.parametrize(
     "capacity",
     [Limits.PY_SSIZE_T_MAX.value + 1, Limits.SIZE_MAX.value + 1, -1, -10, 0],
 )
 def test_invalid_capacity_value(buf_name, buf_funcs, capacity):
     with pytest.raises(BufferCapacityValueError) as exc_info:
-        buf_funcs["init"](capacity, SUPPORTED_DTYPES_FP[0])
+        buf_funcs["init"](capacity)
 
-    class_obj = buf_funcs["init"](1, SUPPORTED_DTYPES_FP[0]).__class__
+    class_obj = buf_funcs["init"](1).__class__
     overflow = capacity in (
         Limits.PY_SSIZE_T_MAX.value + 1,
         Limits.SIZE_MAX.value + 1,
@@ -201,9 +231,9 @@ def test_invalid_capacity_value(buf_name, buf_funcs, capacity):
 )
 def test_invalid_capacity_type(buf_name, buf_funcs, capacity):
     with pytest.raises(BufferCapacityTypeError) as exc_info:
-        buf_funcs["init"](capacity, SUPPORTED_DTYPES_FP[0])
+        buf_funcs["init"](capacity)
 
-    class_obj = buf_funcs["init"](1, SUPPORTED_DTYPES_FP[0]).__class__
+    class_obj = buf_funcs["init"](1).__class__
 
     exc = exc_info.value
     assert exc.class_obj is class_obj
@@ -218,13 +248,13 @@ def test_invalid_capacity_type(buf_name, buf_funcs, capacity):
 )
 @pytest.mark.parametrize(
     "dtype",
-    [np.float16, np.int16, np.uint16, np.bool, -1, 0, 1.5, None, "abc"],
+    [np.float16, np.int16, np.uint16, np.bool, -1, 0, 1.5, "abc"],
 )
 def test_invalid_dtype(buf_name, buf_funcs, dtype):
     with pytest.raises(DataTypeError) as exc_info:
-        buf_funcs["init"](CAPACITIES[0], dtype)
+        buf_funcs["init"](1, dtype)
 
-    class_obj = buf_funcs["init"](1, SUPPORTED_DTYPES_FP[0]).__class__
+    class_obj = buf_funcs["init"](1).__class__
     valid_values = (
         SUPPORTED_DTYPES_ALL
         if buf_name in MAIN_BUFFERS_IDS
