@@ -211,56 +211,56 @@ BLOCK_SIZES = (4096, 8192, 16_384, 32_768, 65_536)
 ----------
 RunningMeanSqBuffer :
 Warm Cache: False
-~608–5283M float32 elems/sec (extend + calculation)
-2.43–21.13 GB/s effective throughput
+~835–5524M float32 elems/sec (extend + calculation)
+3.34–22.10 GB/s effective throughput
 ----------
 Warm Cache: False
-~58–1855M float64 elems/sec (extend + calculation)
-0.46–14.84 GB/s effective throughput
+~159–1879M float64 elems/sec (extend + calculation)
+1.28–15.03 GB/s effective throughput
 ----------
 Warm Cache: True
-~618–6426M float32 elems/sec (extend + calculation)
-2.47–25.70 GB/s effective throughput
+~861–6121M float32 elems/sec (extend + calculation)
+3.44–24.49 GB/s effective throughput
 ----------
 Warm Cache: True
-~57–2330M float64 elems/sec (extend + calculation)
-0.45–18.64 GB/s effective throughput
+~162–2472M float64 elems/sec (extend + calculation)
+1.30–19.78 GB/s effective throughput
 ----------
 ----------
 RunningMeanBuffer :
 Warm Cache: False
-~173–2469M float32 elems/sec (extend + calculation)
-0.69–9.88 GB/s effective throughput
+~347–2566M float32 elems/sec (extend + calculation)
+1.39–10.26 GB/s effective throughput
 ----------
 Warm Cache: False
-~160–1878M float64 elems/sec (extend + calculation)
-1.28–15.03 GB/s effective throughput
+~304–1926M float64 elems/sec (extend + calculation)
+2.43–15.41 GB/s effective throughput
 ----------
 Warm Cache: True
-~173–2632M float32 elems/sec (extend + calculation)
-0.69–10.53 GB/s effective throughput
+~297–2749M float32 elems/sec (extend + calculation)
+1.19–11.00 GB/s effective throughput
 ----------
 Warm Cache: True
-~163–2083M float64 elems/sec (extend + calculation)
-1.30–16.67 GB/s effective throughput
+~316–2157M float64 elems/sec (extend + calculation)
+2.53–17.26 GB/s effective throughput
 ----------
 ----------
 IntegratedGatedBuffer :
 Warm Cache: False
-~39–588M float32 elems/sec (extend + calculation)
-0.16–2.35 GB/s effective throughput
+~34–503M float32 elems/sec (extend + calculation)
+0.13–2.01 GB/s effective throughput
 ----------
 Warm Cache: False
-~17–319M float64 elems/sec (extend + calculation)
-0.14–2.55 GB/s effective throughput
+~15–255M float64 elems/sec (extend + calculation)
+0.12–2.04 GB/s effective throughput
 ----------
 Warm Cache: True
-~39–570M float32 elems/sec (extend + calculation)
-0.16–2.28 GB/s effective throughput
+~33–516M float32 elems/sec (extend + calculation)
+0.13–2.06 GB/s effective throughput
 ----------
 Warm Cache: True
-~17–317M float64 elems/sec (extend + calculation)
-0.14–2.54 GB/s effective throughput
+~14–265M float64 elems/sec (extend + calculation)
+0.11–2.12 GB/s effective throughput
 ----------
 ```
 

@@ -19,6 +19,7 @@ from numcircbuf import (
     RunningMeanSqBuffer,
     RunningMeanBuffer,
     IntegratedGatedBuffer,
+    determine_operation_focus,
 )
 from numcircbuf.bench_utils import (
     raw_bench_with_calc,
@@ -31,18 +32,21 @@ TOTAL_BYTE_LIMIT = round(TOTAL_GiB_LIMIT * (1024**3))
 
 CALC_EVERY = 1
 
-OP_BUFFER_METHODS = {
+BUFFER_METHODS = {
     RunningMeanSqBuffer: "mean_square",
     RunningMeanBuffer: "mean",
+    IntegratedGatedBuffer: "gated_mean_square",
 }
 DTYPES = (np.float32, np.float64)
 MAXLENS = (4096, 8192, 16_384, 32_768, 65_536)
 BLOCK_SIZES = (4096, 8192, 16_384, 32_768, 65_536)
 
 
-def _bench_op_focus(
-    buffer_class,
-    func_name,
+def _run_benchmark(
+    buffer_class: type[RunningMeanSqBuffer]
+    | type[RunningMeanBuffer]
+    | type[IntegratedGatedBuffer],
+    func_name: str,
     dtype: type,
     maxlen: int,
     block_size: int,
@@ -56,69 +60,30 @@ def _bench_op_focus(
     evict_arr,
 ):
     elem_bytes = np.dtype(dtype).itemsize
-    times = []
 
-    for operation_focus in ("calculation", "extend/append"):
+    if buffer_class in (RunningMeanSqBuffer, RunningMeanBuffer):
         buffer = buffer_class(
-            maxlen, operation_focus=operation_focus, dtype=dtype
+            maxlen,
+            operation_focus=determine_operation_focus(
+                buffer_type=buffer_class,
+                dtype=dtype,
+                buffer_maxlen=maxlen,
+                block_size=block_size,
+                calc_every=calc_every,
+            ),
+            dtype=dtype,
         )
-        times.append(
-            raw_bench_with_calc(
-                buffer,
-                getattr(buffer, func_name),
-                fill_data,
-                offset_data,
-                warmup_data,
-                data,
-                calc_every,
-                n_runs,
-                evict_arr,
-                warm_cache,
-            )
+    else:
+        buffer = buffer_class(
+            maxlen,
+            -70.0,
+            -10.0,
+            dtype=dtype,
         )
 
-    calc_focused_time = times[0] * 1e-9
-    extend_focused_time = times[1] * 1e-9
-
-    total_bytes = block_size * elem_bytes
-
-    calc_processing_rate = block_size / calc_focused_time
-    calc_throughput_gbps = total_bytes / (calc_focused_time * 1e9)
-    extend_processing_rate = block_size / extend_focused_time
-    extend_throughput_gbps = total_bytes / (extend_focused_time * 1e9)
-
-    return (
-        calc_processing_rate,
-        calc_throughput_gbps,
-        extend_processing_rate,
-        extend_throughput_gbps,
-    )
-
-
-def _bench_integrated(
-    dtype: type,
-    maxlen: int,
-    block_size: int,
-    calc_every: int,
-    n_runs: int,
-    warm_cache: bool,
-    data,
-    warmup_data,
-    offset_data,
-    fill_data,
-    evict_arr,
-):
-    elem_bytes = np.dtype(dtype).itemsize
-
-    buffer = IntegratedGatedBuffer(
-        maxlen,
-        -70.0,
-        -10.0,
-        dtype=dtype,
-    )
-    time = raw_bench_with_calc(
+    time_ns = raw_bench_with_calc(
         buffer,
-        buffer.gated_mean_square,
+        getattr(buffer, func_name),
         fill_data,
         offset_data,
         warmup_data,
@@ -128,12 +93,11 @@ def _bench_integrated(
         evict_arr,
         warm_cache,
     )
-    time *= 1e-9
 
+    time_s = time_ns * 1e-9
     total_bytes = block_size * elem_bytes
-
-    processing_rate = block_size / time
-    throughput_gbps = total_bytes / (time * 1e9)
+    processing_rate = block_size / time_s
+    throughput_gbps = total_bytes / (time_s * 1e9)
 
     return (
         processing_rate,
@@ -187,9 +151,7 @@ def main(
 ):
     results: defaultdict[
         str, defaultdict[Tuple[type, bool], Dict[str, List[float]]]
-    ] = defaultdict(
-        lambda: defaultdict(lambda: {"processing": [], "throughput": []})
-    )
+    ] = defaultdict(lambda: defaultdict(lambda: {"processing": [], "throughput": []}))
     for dtype in DTYPES:
         for maxlen, block_size, n_runs in params_for_dtype(
             dtype, total_byte_limit, maxlens, block_sizes
@@ -216,9 +178,9 @@ def main(
             ):
                 for warm_cache in (False, True):
                     key = (dtype, warm_cache)
-                    for op_buffer_class, func in OP_BUFFER_METHODS.items():
-                        p1, t1, p2, t2 = _bench_op_focus(
-                            op_buffer_class,
+                    for buffer_class, func in BUFFER_METHODS.items():
+                        p, t = _run_benchmark(
+                            buffer_class,
                             func,
                             dtype,
                             maxlen,
@@ -232,31 +194,11 @@ def main(
                             fill_data,
                             evict_arr,
                         )
-                        name = op_buffer_class.__name__
-                        results[name][key]["processing"].extend([p1, p2])
-                        results[name][key]["throughput"].extend([t1, t2])
+                        name = buffer_class.__name__
+                        results[name][key]["processing"].append(p)
+                        results[name][key]["throughput"].append(t)
 
-                    p, t = _bench_integrated(
-                        dtype,
-                        maxlen,
-                        block_size,
-                        calc_every,
-                        n_runs,
-                        warm_cache,
-                        data,
-                        warmup_data,
-                        offset_data,
-                        fill_data,
-                        evict_arr,
-                    )
-                    name = IntegratedGatedBuffer.__name__
-                    results[name][key]["processing"].append(p)
-                    results[name][key]["throughput"].append(t)
-
-    all_buffer_names = [
-        buffer_class.__name__
-        for buffer_class in list(OP_BUFFER_METHODS) + [IntegratedGatedBuffer]
-    ]
+    all_buffer_names = [buffer_class.__name__ for buffer_class in list(BUFFER_METHODS)]
     for buffer_name in all_buffer_names:
         print_separator()
         print(f"{buffer_name} :")
