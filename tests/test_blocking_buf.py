@@ -23,18 +23,17 @@ from numcircbuf import BlockingCircBuffer
 from numcircbuf.exceptions import NumCircBufValueError
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api
+    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api
+        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
         HAS_C_TESTS = True
 
     except ImportError:
-
         HAS_C_TESTS = False
 
 from .constants import CAPACITIES, SUPPORTED_DTYPES_ALL, DTYPE_TO_SUFFIX
@@ -307,9 +306,7 @@ def test_multi_thread_ticket_skips(capacity, dtype):
                 (producer_c_append, (8, -1, True)),
             )
 
-            expected = np.concatenate(
-                [expected, np.array([7, 8], dtype=dtype)]
-            )
+            expected = np.concatenate([expected, np.array([7, 8], dtype=dtype)])
 
         threads = []
         buf.write_extend_unchecked(np.empty(capacity, dtype=dtype))
@@ -417,9 +414,7 @@ def test_multi_thread_stress_with_partial_reads(capacity, dtype):
 _n_test_threads = 3
 
 
-@pytest.mark.parametrize(
-    "capacity", tuple(c * _n_test_threads for c in CAPACITIES)
-)
+@pytest.mark.parametrize("capacity", tuple(c * _n_test_threads for c in CAPACITIES))
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_ALL)
 def test_read_ordering(capacity, dtype):
     data = np.arange(capacity, dtype=dtype)
@@ -467,9 +462,7 @@ def test_read_ordering(capacity, dtype):
         assert np.array_equal(data, np.concatenate(results))
 
 
-@pytest.mark.parametrize(
-    "capacity", tuple(c * _n_test_threads for c in CAPACITIES)
-)
+@pytest.mark.parametrize("capacity", tuple(c * _n_test_threads for c in CAPACITIES))
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_ALL)
 def test_write_ordering(capacity, dtype):
     data = np.arange(capacity, dtype=dtype)
@@ -526,14 +519,10 @@ def test_write_ordering(capacity, dtype):
         producer_list.append(producer_c_append)
 
     for p in producer_list:
-        is_append = p == producer_append or (
-            HAS_C_TESTS and p == producer_c_append
-        )
+        is_append = p == producer_append or (HAS_C_TESTS and p == producer_c_append)
         _test(p, is_append)
         if not is_append:
             assert np.array_equal(data, buf.read())
         else:
-            arr = np.array(
-                [parts[i][0] for i in range(_n_test_threads)], dtype=dtype
-            )
+            arr = np.array([parts[i][0] for i in range(_n_test_threads)], dtype=dtype)
             assert np.array_equal(arr, buf.read())

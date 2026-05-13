@@ -62,15 +62,31 @@ OVERFLOW_CASES_ALL = OVERFLOW_CASES_FP + [
     (np.uint64, -1, OverflowError),
 ]
 
-_append = lambda buf, value: buf.append(value)
-_extend = lambda buf, block: buf.extend(block)
-_extend_unchecked = lambda buf, np_block: buf.extend_unchecked(np_block)
 
-_write_append = lambda buf, value: buf.write_append(value)
-_write_extend = lambda buf, block: buf.write_extend(block)
-_write_extend_unchecked = lambda buf, np_block: buf.write_extend_unchecked(
-    np_block
-)
+def _append(buf, value):
+    return buf.append(value)
+
+
+def _extend(buf, block):
+    return buf.extend(block)
+
+
+def _extend_unchecked(buf, np_block):
+    return buf.extend_unchecked(np_block)
+
+
+def _write_append(buf, value):
+    return buf.write_append(value)
+
+
+def _write_extend(buf, block):
+    return buf.write_extend(block)
+
+
+def _write_extend_unchecked(buf, np_block):
+    return buf.write_extend_unchecked(np_block)
+
+
 MAIN_BUFFERS = {
     "OverwriteCircBuffer_never": {
         "init": lambda maxlen, dtype=None: OverwriteCircBuffer(
@@ -168,9 +184,7 @@ ALL_BUFFERS_PARAMS = MAIN_BUFFERS_PARAMS + UTIL_BUFFERS_PARAMS
 ALL_BUFFERS_IDS = MAIN_BUFFERS_IDS + UTIL_BUFFERS_IDS
 
 
-@pytest.mark.parametrize(
-    "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
-)
+@pytest.mark.parametrize("buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS)
 def test_default_dtype(buf_name, buf_funcs):
     expected_dtype = np.float64
 
@@ -186,9 +200,7 @@ def test_default_dtype(buf_name, buf_funcs):
         assert np.allclose(buf.view()[:], arr**2)
 
 
-@pytest.mark.parametrize(
-    "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
-)
+@pytest.mark.parametrize("buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS)
 @pytest.mark.parametrize(
     "capacity",
     [Limits.PY_SSIZE_T_MAX.value + 1, Limits.SIZE_MAX.value + 1, -1, -10, 0],
@@ -214,9 +226,7 @@ def test_invalid_capacity_value(buf_name, buf_funcs, capacity):
     assert exc.message
 
 
-@pytest.mark.parametrize(
-    "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
-)
+@pytest.mark.parametrize("buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS)
 @pytest.mark.parametrize(
     "capacity",
     [
@@ -238,14 +248,12 @@ def test_invalid_capacity_type(buf_name, buf_funcs, capacity):
     exc = exc_info.value
     assert exc.class_obj is class_obj
     assert exc.obj is None
-    assert exc.received_type == type(capacity)
+    assert exc.received_type is type(capacity)
     assert exc.valid_types == (int,)
     assert exc.message
 
 
-@pytest.mark.parametrize(
-    "buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS
-)
+@pytest.mark.parametrize("buf_name, buf_funcs", ALL_BUFFERS_PARAMS, ids=ALL_BUFFERS_IDS)
 @pytest.mark.parametrize(
     "dtype",
     [np.float16, np.int16, np.uint16, np.bool, -1, 0, 1.5, "abc"],
@@ -256,9 +264,7 @@ def test_invalid_dtype(buf_name, buf_funcs, dtype):
 
     class_obj = buf_funcs["init"](1).__class__
     valid_values = (
-        SUPPORTED_DTYPES_ALL
-        if buf_name in MAIN_BUFFERS_IDS
-        else SUPPORTED_DTYPES_FP
+        SUPPORTED_DTYPES_ALL if buf_name in MAIN_BUFFERS_IDS else SUPPORTED_DTYPES_FP
     )
 
     exc = exc_info.value
@@ -555,9 +561,7 @@ def _test_append_extend(buf_name, buf_funcs, capacity, dtype):
     buf_funcs["extend"](buf, list(range(quarter_capacity)))
     assert len(buf) == quarter_capacity
     if buf_name == "IntegratedGatedBuffer":
-        assert np.array_equal(
-            buf.view()[:], quarter_sequence * quarter_sequence
-        )
+        assert np.array_equal(buf.view()[:], quarter_sequence * quarter_sequence)
     else:
         assert np.array_equal(buf.view()[:], quarter_sequence)
 
@@ -620,9 +624,7 @@ def _test_edge_cases_append_extend(buf_funcs, capacity, dtype):
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_ALL)
-def test_main_buf_edge_cases_append_extend(
-    buf_name, buf_funcs, capacity, dtype
-):
+def test_main_buf_edge_cases_append_extend(buf_name, buf_funcs, capacity, dtype):
     _test_edge_cases_append_extend(buf_funcs, capacity, dtype)
 
 
@@ -631,9 +633,7 @@ def test_main_buf_edge_cases_append_extend(
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
-def test_util_buf_edge_cases_append_extend(
-    buf_name, buf_funcs, capacity, dtype
-):
+def test_util_buf_edge_cases_append_extend(buf_name, buf_funcs, capacity, dtype):
     _test_edge_cases_append_extend(buf_funcs, capacity, dtype)
 
 

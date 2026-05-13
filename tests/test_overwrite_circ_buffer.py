@@ -25,18 +25,17 @@ from numcircbuf.exceptions import (
 )
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api
+    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api
+        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
         HAS_C_TESTS = True
 
     except ImportError:
-
         HAS_C_TESTS = False
 
 from .constants import (
@@ -91,7 +90,7 @@ def test_invalid_mode_type(mode):
     assert exc.class_obj is OverwriteCircBuffer
     assert exc.obj is None
     assert exc.parameter == "return_overwritten_policy"
-    assert exc.received_type == type(mode)
+    assert exc.received_type is type(mode)
     assert exc.valid_types == (str,)
     assert exc.message
 
@@ -101,9 +100,7 @@ def test_overwrite_returns(dtype):
     """Test overwrite returns."""
     empty_expected = np.array([], dtype)
     if HAS_C_TESTS:
-        c_append = getattr(
-            _test_cython_api, f"ocb_spy_append_{DTYPE_TO_SUFFIX[dtype]}"
-        )
+        c_append = getattr(_test_cython_api, f"ocb_spy_append_{DTYPE_TO_SUFFIX[dtype]}")
         c_append_capture = getattr(
             _test_cython_api,
             f"ocb_spy_append_{DTYPE_TO_SUFFIX[dtype]}_capture",
@@ -244,9 +241,7 @@ def test_math_unsupported_dtypes(mode, dtype, func_name):
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize(
-    "dtype", set(SUPPORTED_DTYPES_ALL) - set(SUPPORTED_DTYPES_FP)
-)
+@pytest.mark.parametrize("dtype", set(SUPPORTED_DTYPES_ALL) - set(SUPPORTED_DTYPES_FP))
 @pytest.mark.parametrize("func_name", ("mean_squares", "sum_squares"))
 def test_math_fp_unsupported(mode, dtype, func_name):
     buffer = OverwriteCircBuffer(1, mode, dtype)

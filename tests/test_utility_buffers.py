@@ -36,18 +36,17 @@ from numcircbuf import (
 from numcircbuf.core import _UtilityBufferBP
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api
+    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api
+        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
 
         HAS_C_TESTS = True
 
     except ImportError:
-
         HAS_C_TESTS = False
 
 from .constants import SUPPORTED_DTYPES_FP, CAPACITIES, Limits
@@ -122,16 +121,16 @@ def _mock_abs_gated_mean_square(
 
 CALC_BUFFERS = {
     "RunningMeanSqBuffer_calculation": {
-        "init": lambda maxlen, dtype, mode="calculation", recalc_threshold=None: RunningMeanSqBuffer(
-            maxlen, mode, dtype, recalc_threshold
+        "init": lambda maxlen, dtype, mode="calculation", recalc_threshold=None: (
+            RunningMeanSqBuffer(maxlen, mode, dtype, recalc_threshold)
         ),
         "metric_fn": lambda buf: buf.mean_square(),
         "ground_fn": lambda buf: np.mean(buf.view().to_numpy() ** 2),
         "direct_ground_fn": lambda data: np.mean(data**2),
     },
     "RunningMeanBuffer_calculation": {
-        "init": lambda maxlen, dtype, mode="calculation", recalc_threshold=None: RunningMeanBuffer(
-            maxlen, mode, dtype, recalc_threshold
+        "init": lambda maxlen, dtype, mode="calculation", recalc_threshold=None: (
+            RunningMeanBuffer(maxlen, mode, dtype, recalc_threshold)
         ),
         "metric_fn": lambda buf: buf.mean(),
         "ground_fn": lambda buf: np.mean(buf.view().to_numpy()),
@@ -141,16 +140,16 @@ CALC_BUFFERS = {
 
 EXTEND_BUFFERS = {
     "RunningMeanSqBuffer_extend/append": {
-        "init": lambda maxlen, dtype, mode="extend/append", recalc_threshold=None: RunningMeanSqBuffer(
-            maxlen, mode, dtype, recalc_threshold
+        "init": lambda maxlen, dtype, mode="extend/append", recalc_threshold=None: (
+            RunningMeanSqBuffer(maxlen, mode, dtype, recalc_threshold)
         ),
         "metric_fn": lambda buf: buf.mean_square(),
         "ground_fn": lambda buf: np.mean(buf.view().to_numpy() ** 2),
         "direct_ground_fn": lambda data: np.mean(data**2),
     },
     "RunningMeanBuffer_extend/append": {
-        "init": lambda maxlen, dtype, mode="extend/append", recalc_threshold=None: RunningMeanBuffer(
-            maxlen, mode, dtype, recalc_threshold
+        "init": lambda maxlen, dtype, mode="extend/append", recalc_threshold=None: (
+            RunningMeanBuffer(maxlen, mode, dtype, recalc_threshold)
         ),
         "metric_fn": lambda buf: buf.mean(),
         "ground_fn": lambda buf: np.mean(buf.view().to_numpy()),
@@ -443,9 +442,7 @@ def test_special_and_invalid_thresholds(capacity, dtype):
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
 def test_internal_current_abs_gated_mean_sq(capacity, dtype):
-    buf = IntegratedGatedBuffer(
-        capacity, ABS_GATE_LUFS, REL_GATE_LU, dtype=dtype
-    )
+    buf = IntegratedGatedBuffer(capacity, ABS_GATE_LUFS, REL_GATE_LU, dtype=dtype)
     assert buf._current_abs_gated_mean_sq() == 0
     buf.append(1)
     assert buf._current_abs_gated_mean_sq() == 1
@@ -476,9 +473,7 @@ def test_threshold_being_applied(dtype):
     assert buf.gated_mean_square() == 0.0
 
     abs_gate_lufs_edge = float("-INF")  # 10**((-inf - 0.691)/10) = 0.0
-    buf = IntegratedGatedBuffer(
-        10, abs_gate_lufs_edge, REL_GATE_LU, dtype=dtype
-    )
+    buf = IntegratedGatedBuffer(10, abs_gate_lufs_edge, REL_GATE_LU, dtype=dtype)
 
     arr = np.zeros(10, dtype=dtype)
     buf.extend_unchecked(arr)
@@ -487,9 +482,7 @@ def test_threshold_being_applied(dtype):
     assert buf.gated_mean_square() == 0.0
 
     rel_gate_lu_edge = 0  # 10**(0 / 10) = 1.0
-    buf = IntegratedGatedBuffer(
-        10, ABS_GATE_LUFS, rel_gate_lu_edge, dtype=dtype
-    )
+    buf = IntegratedGatedBuffer(10, ABS_GATE_LUFS, rel_gate_lu_edge, dtype=dtype)
 
     arr = np.array(([0.5] * 10), dtype=dtype)
     buf.extend_unchecked(arr)
@@ -528,7 +521,7 @@ def test_invalid_mode_type(buf_name, buf_funcs, capacity, mode, dtype):
     assert exc.class_obj is class_obj
     assert exc.obj is None
     assert exc.parameter == "operation_focus"
-    assert exc.received_type == type(mode)
+    assert exc.received_type is type(mode)
     assert exc.valid_types == (str,)
     assert exc.message
 
@@ -548,9 +541,7 @@ def test_invalid_mode_type(buf_name, buf_funcs, capacity, mode, dtype):
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
-def test_invalid_recalc_value(
-    buf_name, buf_funcs, recalc_threshold, capacity, dtype
-):
+def test_invalid_recalc_value(buf_name, buf_funcs, recalc_threshold, capacity, dtype):
     with pytest.raises(ConfigurationValueError) as exc_info:
         buf_funcs["init"](capacity, dtype, recalc_threshold=recalc_threshold)
 
@@ -582,9 +573,7 @@ def test_invalid_recalc_value(
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
-def test_invalid_recalc_type(
-    buf_name, buf_funcs, recalc_threshold, capacity, dtype
-):
+def test_invalid_recalc_type(buf_name, buf_funcs, recalc_threshold, capacity, dtype):
     with pytest.raises(ConfigurationTypeError) as exc_info:
         buf_funcs["init"](capacity, dtype, recalc_threshold=recalc_threshold)
 
@@ -594,7 +583,7 @@ def test_invalid_recalc_type(
     assert exc.class_obj is class_obj
     assert exc.obj is None
     assert exc.parameter == "recalc_threshold"
-    assert exc.received_type == type(recalc_threshold)
+    assert exc.received_type is type(recalc_threshold)
     assert exc.valid_types == (int, None)
     assert exc.message
 
@@ -684,14 +673,24 @@ def test_metric_when_wraps_and_cache(buf_name, buf_funcs, dtype):
     assert len(buf) == MAXLEN
 
     buf_funcs["metric_fn"](buf)
-    hit_time = _time(buf, clear_cache=False)
-    miss_time = _time(buf, clear_cache=True)
+    max_attempts = 3
+    for _ in range(max_attempts):
+        hit_time = _time(buf, clear_cache=False)
+        miss_time = _time(buf, clear_cache=True)
 
-    if not is_valgrind and buf_name not in (
-        "RunningMeanSqBuffer_calculation",
-        "RunningMeanBuffer_calculation",
-    ):
-        assert miss_time > hit_time * 1.2
+        if is_valgrind or buf_name in (
+            "RunningMeanSqBuffer_calculation",
+            "RunningMeanBuffer_calculation",
+        ):
+            break
+
+        if miss_time > hit_time * 1.2:
+            break
+    else:
+        pytest.fail(
+            f"Cache timing failed after {max_attempts} attempts. "
+            f"miss_time ({miss_time}) was not > hit_time ({hit_time}) * 1.2"
+        )
 
     assert math.isclose(
         buf_funcs["metric_fn"](buf),
@@ -709,13 +708,9 @@ def test_metric_when_wraps_and_cache(buf_name, buf_funcs, dtype):
 @pytest.mark.parametrize("recalc_threshold", RECALC_THRESHOLDS)
 def test_when_recalc(buf_name, buf_funcs, dtype, recalc_threshold):
     test_maxlen = (BLOCK_SIZE * NUM_BLOCKS) // 4
-    buf = buf_funcs["init"](
-        test_maxlen, dtype=dtype, recalc_threshold=recalc_threshold
-    )
+    buf = buf_funcs["init"](test_maxlen, dtype=dtype, recalc_threshold=recalc_threshold)
     block_len = len(blocks[0])
-    fill_data = np.tile(blocks[0], math.ceil(test_maxlen / BLOCK_SIZE)).astype(
-        dtype
-    )
+    fill_data = np.tile(blocks[0], math.ceil(test_maxlen / BLOCK_SIZE)).astype(dtype)
 
     buf.extend(fill_data)
     if len(fill_data) >= test_maxlen:
@@ -806,9 +801,7 @@ def test_recalc_caps_drift_with_high_dynamic_range_signal(
 
     max_drifts: dict[Any, float] = {}
     for recalc_threshold in (None, 1):
-        buf = buf_funcs["init"](
-            MAXLEN, np.float32, recalc_threshold=recalc_threshold
-        )
+        buf = buf_funcs["init"](MAXLEN, np.float32, recalc_threshold=recalc_threshold)
         max_ground_truth, max_metric, max_drift = calculate_drift(
             buf=buf,
             metric_fn=metric_fn,

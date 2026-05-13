@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-
-from numcircbuf.constants import SupportedDtypesFP, SupportedDtypesAll, Limits
+from numcircbuf.constants import (
+    SupportedDtypesFP,
+    SupportedDtypesAll,
+    Limits,  # noqa: F401
+)
 
 CAPACITIES = (1, 3, 10, 15, 64, 100, 128, 1024)
 

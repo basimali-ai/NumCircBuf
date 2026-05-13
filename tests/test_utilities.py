@@ -20,7 +20,7 @@ from pathlib import Path
 import time
 from itertools import product
 import ctypes
-import platform
+import platform  # noqa: F401
 import logging
 import warnings
 
@@ -106,15 +106,11 @@ def test_get_available_ram():
     assert isinstance(res, int) or res is None
 
 
-@pytest.mark.parametrize(
-    "buffer_type", (RunningMeanSqBuffer, RunningMeanBuffer)
-)
+@pytest.mark.parametrize("buffer_type", (RunningMeanSqBuffer, RunningMeanBuffer))
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
 @pytest.mark.parametrize("block_size", (1, 2))
 @pytest.mark.parametrize("verbose", (True, False))
-def test_determine_operation_focus(
-    caplog, buffer_type, dtype, block_size, verbose
-):
+def test_determine_operation_focus(caplog, buffer_type, dtype, block_size, verbose):
     if verbose:
         caplog.set_level(logging.INFO)
 
@@ -332,8 +328,7 @@ def test_generate_rand_memmap_arr_not_covered(dtype):
                 os.remove(path)
         except Exception:
             logger.warning(
-                "--- Could not delete temp file. Delete manually. ---\n"
-                f"Path: {path}",
+                f"--- Could not delete temp file. Delete manually. ---\nPath: {path}",
                 exc_info=True,
             )
 
@@ -405,8 +400,7 @@ def test_generate_rand_memmap_arr_exceptions():
                 os.remove(path)
         except Exception:
             logger.warning(
-                "--- Could not delete temp file. Delete manually. ---\n"
-                f"Path: {path}",
+                f"--- Could not delete temp file. Delete manually. ---\nPath: {path}",
                 exc_info=True,
             )
 
@@ -500,9 +494,7 @@ def test_raw_bench_with_calc_exceptions(dtype):
     n_runs = 2
     irrelevant_dim_size = 1
 
-    buf = RunningMeanSqBuffer(
-        irrelevant_dim_size, "extend/append", dtype=dtype
-    )
+    buf = RunningMeanSqBuffer(irrelevant_dim_size, "extend/append", dtype=dtype)
     warmup_block = np.empty((n_runs, irrelevant_dim_size), dtype=dtype)
 
     for blocks, fill_blocks, offset_blocks in (
@@ -668,9 +660,9 @@ def _helper_mocker_edge_cases(
                 if supports_default_overwriting
                 else call_target_func()
             )
-            assert (
-                result == return_val
-            ), f"Failed on {label}: expected {default_val}, got {result}"
+            assert result == return_val, (
+                f"Failed on {label}: expected {default_val}, got {result}"
+            )
 
     else:
         if has_cache:
@@ -681,9 +673,9 @@ def _helper_mocker_edge_cases(
             if supports_default_overwriting
             else call_target_func()
         )
-        assert (
-            result == return_val
-        ), f"Failed on 'unknown' platform: expected {default_val}, got {result}"
+        assert result == return_val, (
+            f"Failed on 'unknown' platform: expected {default_val}, got {result}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1205,9 +1197,7 @@ def test_get_l3_linux_no_indices(mocker):
 
 def test_get_l3_linux_no_level_3(mocker):
     mocker.patch("os.path.isdir", return_value=True)
-    mocker.patch(
-        "glob.glob", return_value=["/sys/.../index0", "/sys/.../index1"]
-    )
+    mocker.patch("glob.glob", return_value=["/sys/.../index0", "/sys/.../index1"])
 
     mock_file = mocker.mock_open()
     mock_file.side_effect = [
@@ -1516,9 +1506,7 @@ def test_base_exception_and_warning_no_message():
 
 
 @pytest.mark.parametrize("log_delete_errors", (False, True))
-def test_temporary_benchmark_data_error_logging(
-    caplog, mocker, log_delete_errors
-):
+def test_temporary_benchmark_data_error_logging(caplog, mocker, log_delete_errors):
     mock = mocker.patch(
         "numcircbuf.bench_utils.os.remove",
         side_effect=OSError("--- Mocked OSError ---"),
@@ -1562,7 +1550,6 @@ def test_temporary_benchmark_data_error_logging(
                 os.remove(path)
         except Exception:
             logger.warning(
-                "--- Could not delete temp file. Delete manually. ---\n"
-                f"Path: {path}",
+                f"--- Could not delete temp file. Delete manually. ---\nPath: {path}",
                 exc_info=True,
             )
