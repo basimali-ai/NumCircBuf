@@ -436,9 +436,6 @@ def determine_operation_focus(
     buffer_maxlen: int,
     block_size: int, # Use 1 if you will be appending a single element only.
     calc_every: int, # Calculate every n blocks.
-    test_blocks: int = 128, # How many blocks to run the benchmark for,
-                            # more = (higher memory usage)
-                            # + (potentially more accurate results).
     verbose: bool = False, # Logs the exact relative multipliers,
                            # as well as total time spent in the function.
 ) -> Literal["calculation", "extend/append"]: # Outputs the best operation focus
@@ -676,7 +673,7 @@ NumCircBuf is optimized for speed and efficiency:
 
 - **Cython + raw C pointers** – for near-C performance
 - **Minimal Python object creation** – slices/views reused, caching reduces repeated calculations
-- **BLAS-backed NumPy operations** – for efficient array math (dot products, sum-of-squares)
+- **BLAS-backed NumPy operations** – for efficient array math
 - **O(1) accumulator operations** – for real-time applications
 - **Handles high-throughput buffers** – for streaming data like audio or sensor signals
 
@@ -694,8 +691,6 @@ For detailed performance benchmarks, see the [PERFORMANCE.md](https://github.com
   - **Warm cache (data)**:
     - AMD R7700x (DDR5): ~73 GB/s
     - AMD R5600 (DDR4): ~50 GB/s
-
-- **Memory efficiency and consistency**: ~4 bytes per element (32-bit) and ~8 bytes per element (64-bit)
 
 ## Documentation
 
@@ -727,7 +722,7 @@ If you use NumCircBuf in your research or projects, please cite it as:
   title = {NumCircBuf: High-Performance Numerical Circular Buffers for Python},
   year = {2026},
   url = {https://github.com/basimali-ai/NumCircBuf},
-  version = {1.0.2}
+  version = {1.0.3}
 }
 ```
 

@@ -21,9 +21,10 @@ buffer behavior based on specific workload types.
 """
 
 from __future__ import annotations
+import uuid
 import logging
 import time
-from typing import Callable, Literal, TYPE_CHECKING, Any, TypeVar, Generic
+from typing import Callable, Literal, TYPE_CHECKING, Any, TypeVar, Generic, TypedDict
 
 import numpy as np
 
@@ -139,14 +140,10 @@ def determine_operation_focus(
     """
 
     if calc_every <= 0:
-        raise NumCircBufValueError(
-            message="`calc_every` must be greater than 0"
-        )
+        raise NumCircBufValueError(message="`calc_every` must be greater than 0")
 
     if block_size <= 0:
-        raise NumCircBufValueError(
-            message="`block_size` must be greater than 0"
-        )
+        raise NumCircBufValueError(message="`block_size` must be greater than 0")
 
     if buffer_maxlen > PY_SSIZE_T_MAX:
         raise NumCircBufValueError(
@@ -154,9 +151,7 @@ def determine_operation_focus(
         )
 
     if buffer_maxlen <= 2:
-        raise NumCircBufValueError(
-            message="`buffer_maxlen` must be greater than 2"
-        )
+        raise NumCircBufValueError(message="`buffer_maxlen` must be greater than 2")
 
     if dtype not in (np.float64, np.float32):
         raise NumCircBufTypeError(
@@ -211,6 +206,25 @@ def determine_operation_focus(
         return "extend/append"
 
     start_time = time.time()
+    unique_id = uuid.uuid4().hex[:6]
+
+    if TYPE_CHECKING:
+
+        class TempDataPaths(TypedDict):
+            data_path: str
+            warmup_path: str
+            offset_path: str
+            fill_path: str
+            evict_path: str
+
+    temp_data_paths: "TempDataPaths" = {
+        "data_path": f"temp_bench_data_{unique_id}.dat",
+        "warmup_path": f"temp_bench_warmup_{unique_id}.dat",
+        "offset_path": f"temp_bench_offset_{unique_id}.dat",
+        "fill_path": f"temp_bench_fill_{unique_id}.dat",
+        "evict_path": f"temp_bench_evict_{unique_id}.dat",
+    }
+
     with temporary_benchmark_data(
         dtype,
         buffer_maxlen,
@@ -219,6 +233,7 @@ def determine_operation_focus(
         create_offset_data=True,
         create_fill_data=True,
         create_evict_arr=True,
+        **temp_data_paths,
     ) as (
         _,
         data,
@@ -240,7 +255,7 @@ def determine_operation_focus(
                 dtype=dtype,
             )
             times[operation_focus] = raw_bench_with_calc(
-                buffer,  # type: ignore
+                buffer,  # type: ignore[arg-type]
                 getattr(buffer, func_str),
                 fill_data,
                 offset_data,
@@ -251,11 +266,12 @@ def determine_operation_focus(
                 evict_arr,
             )
 
-        calculation_speedup = times["extend/append"] / times["calculation"]
-        extend_speedup = times["calculation"] / times["extend/append"]
-
         if verbose:
             elapsed = time.time() - start_time
+
+            calculation_speedup = times["extend/append"] / times["calculation"]
+            extend_speedup = times["calculation"] / times["extend/append"]
+
             logger.info(
                 "\nSpeed Comparison ('calculation' vs 'extend/append'):"
                 f"\n  'calculation' speedup = {calculation_speedup:.2f}×"
@@ -263,7 +279,7 @@ def determine_operation_focus(
                 f"\nTotal time taken for data generation + benchmark: {elapsed:.3f} s\n"
             )
 
-        if calculation_speedup > extend_speedup:
+        if times["calculation"] < times["extend/append"]:
             return "calculation"
         else:
             return "extend/append"

@@ -31,3 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Corrected default buffer `dtype` hints and documentation. Previous versions incorrectly suggested `float32` instead of `float64`, which could lead to memory corruption, resulting in data corruption or segmentation faults when using `unchecked` methods.
+
+## [1.0.3] - 2026-05-13
+
+### Fixed
+
+- **README**: Correct `determine_operation_focus` signature.
+- Prevent file name collisions in multi-threaded workflows by appending unique IDs to temporary benchmark files created by `determine_operation_focus`.

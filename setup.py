@@ -133,13 +133,9 @@ if not only_test_api:
     )
 
 if is_test:
-    test_cython_api_pyx_file = process_tempita(
-        src_dir / "_test_cython_api.pyx.in"
-    )
+    test_cython_api_pyx_file = process_tempita(src_dir / "_test_cython_api.pyx.in")
     ext_name = (
-        "numcircbuf_test_cython_api"
-        if only_test_api
-        else "numcircbuf._test_cython_api"
+        "numcircbuf_test_cython_api" if only_test_api else "numcircbuf._test_cython_api"
     )
     extensions.append(
         Extension(
@@ -156,7 +152,7 @@ else:
 
 setup(
     name="NumCircBuf",
-    version="1.0.2",
+    version="1.0.3",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
