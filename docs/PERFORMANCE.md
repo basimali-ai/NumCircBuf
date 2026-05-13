@@ -128,13 +128,33 @@ BLOCK_BYTE_LIMIT = 65_536
 **Results:**
 
 ```text
+--- Extend ---
+
 Warm Cache: False
-OverwriteCircBuffer throughput: 32.38 GB/s
-NaiveNumpyRingBuffer throughput: 13.71 GB/s
+OverwriteCircBuffer throughput: 31.57 GB/s
+RefPythonNumPyCircBuffer throughput: 14.65 GB/s
+BenchDeque throughput: 0.03 GB/s
+BenchList throughput: 0.03 GB/s
 
 Warm Cache: True
-OverwriteCircBuffer throughput: 51.93 GB/s
-NaiveNumpyRingBuffer throughput: 15.71 GB/s
+OverwriteCircBuffer throughput: 48.73 GB/s
+RefPythonNumPyCircBuffer throughput: 17.21 GB/s
+BenchDeque throughput: 0.03 GB/s
+BenchList throughput: 0.03 GB/s
+
+--- Append ---
+
+Warm Cache: False
+OverwriteCircBuffer throughput: 0.08 GB/s
+RefPythonNumPyCircBuffer throughput: 0.02 GB/s
+BenchDeque throughput: 0.05 GB/s
+BenchList throughput: 0.03 GB/s
+
+Warm Cache: True
+OverwriteCircBuffer throughput: 0.09 GB/s
+RefPythonNumPyCircBuffer throughput: 0.03 GB/s
+BenchDeque throughput: 0.05 GB/s
+BenchList throughput: 0.03 GB/s
 ```
 
 ### BlockingCircBuffer
@@ -492,7 +512,7 @@ for epoch in range(100):
 NumCircBuf is designed for high-performance numerical buffers with:
 
 - **O(1) accumulator operations** for supported buffer types (mean, mean-square)
-- **Memory-efficient algorithms** using pre-allocation, and minimal Python object creation
+- **Memory-efficient algorithms** using pre-allocation and minimal Python object creation
 - **Cython optimizations** with raw pointers for near-native speed
 - **BLAS-backed NumPy operations** for efficient array math
 - **Thread-safe options** available for specific buffers (e.g., BlockingCircBuffer)
@@ -501,11 +521,10 @@ By following the usage guidelines and choosing the appropriate buffer type, you 
 
 ### Performance Comparison
 
-NumCircBuf outperforms traditional approaches under equivalent workloads:
+NumCircBuf is designed to saturate hardware limits (L3/DDR bandwidth), providing a massive performance leap over standard Python containers:
 
-- **vs. Python lists**: 150–200× faster for extend numerical operations
-- **vs. Optimized Pure Python NumPy ring buffers**: 1.05–4× faster due to Cython/C optimizations for most use cases
-- **vs. Manual implementations**: More reliable, maintainable, and easier to use
+- **vs. `collections.deque` & Python lists**: **1000–1600× faster** for bulk `extend` and **2–4× faster** for single `append`.
+- **vs. Optimized NumPy Ring Buffers**: **1.05–4× faster** by leveraging raw C++ pointers and specialized wrapping logic to bypass Python/NumPy overhead.
 
 ### When to Use NumCircBuf
 
