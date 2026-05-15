@@ -35,9 +35,7 @@ from numcircbuf.bench_utils import (
 
 NUM_THREADS = 1
 GIB_SAFETY_BUFFER = 2
-TOTAL_BYTE_LIMIT = max(
-    0, get_available_ram() - (GIB_SAFETY_BUFFER * (1024**3))
-)
+TOTAL_BYTE_LIMIT = max(0, get_available_ram() - (GIB_SAFETY_BUFFER * (1024**3)))
 
 
 def _run_variant(
@@ -59,25 +57,23 @@ def _run_variant(
     evict_path: str,
 ) -> tuple[str, float]:
     """Worker function to run a single benchmark variant."""
-    blocks, warmup_block, offset_blocks, fill_blocks, evict_arr = (
-        prepare_blocks(
-            block_size,
-            maxlen,
-            dtype,
-            n_runs,
-            data_path,
-            data_shape,
-            warmup_path,
-            warmup_data_shape,
-            single_offset=False,
-            offset_path=offset_path,
-            offset_data_shape=offset_data_shape,
-            prepare_fill=True,
-            fill_path=fill_path,
-            fill_data_shape=fill_data_shape,
-            prepare_evict=True,
-            evict_path=evict_path,
-        )
+    blocks, warmup_block, offset_blocks, fill_blocks, evict_arr = prepare_blocks(
+        block_size,
+        maxlen,
+        dtype,
+        n_runs,
+        data_path,
+        data_shape,
+        warmup_path,
+        warmup_data_shape,
+        single_offset=False,
+        offset_path=offset_path,
+        offset_data_shape=offset_data_shape,
+        prepare_fill=True,
+        fill_path=fill_path,
+        fill_data_shape=fill_data_shape,
+        prepare_evict=True,
+        evict_path=evict_path,
     )
 
     buffer = buffer_class(maxlen, operation_focus, dtype=dtype)
@@ -151,9 +147,7 @@ def benchmark_and_save(dtype: type):
         8_388_608,
     )
     CALC_EVERY = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64)
-    VARIANTS: tuple[
-        Type[RunningMeanBuffer] | Type[RunningMeanSqBuffer], ...
-    ] = (
+    VARIANTS: tuple[Type[RunningMeanBuffer] | Type[RunningMeanSqBuffer], ...] = (
         RunningMeanBuffer,
         RunningMeanSqBuffer,
     )
@@ -204,16 +198,16 @@ def benchmark_and_save(dtype: type):
         create_fill_data=True,
         create_evict_arr=True,
     ) as (
-        data,
-        warmup_data,
-        offset_data,
-        fill_data,
-        _,
         data_path,
+        data,
         warmup_path,
+        warmup_data,
         offset_path,
+        offset_data,
         fill_path,
+        fill_data,
         evict_path,
+        _,
     ):
         total = len(combo_indices)
         bench_logger.log(f"Total tasks: {total}")
@@ -316,9 +310,7 @@ def benchmark_and_save(dtype: type):
                             # )
                         except Exception as e:
                             completed_futures.append(done_fut)
-                            bench_logger.log(
-                                f"FAILED during submission: {e}", True
-                            )
+                            bench_logger.log(f"FAILED during submission: {e}", True)
                         pbar.update(1)
 
             submit_pbar.close()
@@ -327,12 +319,8 @@ def benchmark_and_save(dtype: type):
             )
 
             # Collect any remaining completions
-            remaining = [
-                f for f in futures.keys() if f not in completed_futures
-            ]
-            bench_logger.log(
-                f"Waiting for {len(remaining)} remaining tasks..."
-            )
+            remaining = [f for f in futures.keys() if f not in completed_futures]
+            bench_logger.log(f"Waiting for {len(remaining)} remaining tasks...")
 
             for i, future in enumerate(as_completed(remaining), 1):
                 (
@@ -344,9 +332,7 @@ def benchmark_and_save(dtype: type):
                 ) = futures[future]
                 try:
                     v, t = future.result()
-                    rows.append(
-                        [v, mode, maxlen, t, block_size, n_runs, calc_every]
-                    )
+                    rows.append([v, mode, maxlen, t, block_size, n_runs, calc_every])
                     times.append(t)
                     # if i % 100:
                     #     bench_logger.log(

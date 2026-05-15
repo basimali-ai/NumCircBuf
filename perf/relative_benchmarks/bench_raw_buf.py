@@ -25,7 +25,7 @@ from tqdm import tqdm
 from numcircbuf import OverwriteCircBuffer
 from numcircbuf.system_info import get_available_ram
 from numcircbuf.bench_utils import (
-    RefPythonNumPyRingBuffer,
+    RefPythonNumPyCircBuffer,
     raw_bench,
     BenchLogger,
     temporary_benchmark_data,
@@ -36,13 +36,11 @@ from numcircbuf.bench_utils import (
 
 NUM_THREADS = 1
 GIB_SAFETY_BUFFER = 2
-TOTAL_BYTE_LIMIT = max(
-    0, (get_available_ram()) - (GIB_SAFETY_BUFFER * (1024**3))
-)
+TOTAL_BYTE_LIMIT = max(0, (get_available_ram()) - (GIB_SAFETY_BUFFER * (1024**3)))
 
 
 def _run_variant(
-    buffer_class: Type[OverwriteCircBuffer] | Type[RefPythonNumPyRingBuffer],
+    buffer_class: Type[OverwriteCircBuffer] | Type[RefPythonNumPyCircBuffer],
     block_size: int,
     maxlen: int,
     dtype: type,
@@ -74,9 +72,7 @@ def _run_variant(
     )
 
     buffer = buffer_class(maxlen, "never", dtype)
-    t = raw_bench(
-        buffer, offset_blocks, warmup_block, blocks, n_runs, evict_arr
-    )
+    t = raw_bench(buffer, offset_blocks, warmup_block, blocks, n_runs, evict_arr)
 
     return buffer_class.__name__, t
 
@@ -132,10 +128,8 @@ def benchmark_and_save(dtype: type):
         262_144,
         524_288,
     )
-    VARIANTS: tuple[
-        Type[OverwriteCircBuffer] | Type[RefPythonNumPyRingBuffer], ...
-    ] = (
-        RefPythonNumPyRingBuffer,
+    VARIANTS: tuple[Type[OverwriteCircBuffer] | Type[RefPythonNumPyCircBuffer], ...] = (
+        RefPythonNumPyCircBuffer,
         OverwriteCircBuffer,
     )
 
@@ -176,16 +170,16 @@ def benchmark_and_save(dtype: type):
         create_fill_data=False,
         create_evict_arr=True,
     ) as (
+        data_path,
         data,
+        warmup_path,
         warmup_data,
+        offset_path,
         offset_data,
         _,
         _,
-        data_path,
-        warmup_path,
-        offset_path,
-        _,
         evict_path,
+        _,
     ):
         total = len(combo_indices)
         bench_logger.log(f"Total tasks: {total}")
@@ -238,9 +232,7 @@ def benchmark_and_save(dtype: type):
 
                 # Check for any errors/completed futures while submitting
                 done_futures = [
-                    f
-                    for f in futures.keys()
-                    if f.done() and f not in completed_futures
+                    f for f in futures.keys() if f.done() and f not in completed_futures
                 ]
                 for done_fut in done_futures:
                     size, maxlen, n_runs = futures[done_fut]
@@ -256,9 +248,7 @@ def benchmark_and_save(dtype: type):
                         # )
                     except Exception as e:
                         completed_futures.append(done_fut)
-                        bench_logger.log(
-                            f"FAILED during submission: {e}", True
-                        )
+                        bench_logger.log(f"FAILED during submission: {e}", True)
                     pbar.update(1)
 
             submit_pbar.close()
@@ -268,12 +258,8 @@ def benchmark_and_save(dtype: type):
             )
 
             # Collect any remaining completions
-            remaining = [
-                f for f in futures.keys() if f not in completed_futures
-            ]
-            bench_logger.log(
-                f"Waiting for {len(remaining)} remaining tasks..."
-            )
+            remaining = [f for f in futures.keys() if f not in completed_futures]
+            bench_logger.log(f"Waiting for {len(remaining)} remaining tasks...")
 
             for i, future in enumerate(as_completed(remaining), 1):
                 size, maxlen, n_runs = futures[future]
@@ -317,8 +303,7 @@ def benchmark_and_save(dtype: type):
         end = time.time()
 
         bench_logger.log(
-            "Total time taken for data generation + benchmark: "
-            f"{end - start:_.2f}s",
+            f"Total time taken for data generation + benchmark: {end - start:_.2f}s",
             True,
         )
 
