@@ -1,57 +1,50 @@
 # Performance Benchmarks and Optimization Guide
 
-This document provides comprehensive performance benchmarks and optimization guidelines for the NumCircBuf library.
+This document provides performance benchmarks and optimization guidelines for the NumCircBuf library.
 
 ## Table of Contents
 
 - [Performance Overview](#performance-overview)
 - [Performance Characteristics](#performance-characteristics)
+- [Core Benchmarking Methods](#core-benchmarking-methods)
 - [Raw Benchmarks](#raw-benchmarks)
 - [Relative Benchmarks](#relative-benchmarks)
 - [Optimization Guide](#optimization-guide)
-- [Thread Safety Considerations](#thread-safety-considerations)
-- [Memory Management](#memory-management)
-- [Best Practices](#best-practices)
 - [Conclusion](#conclusion)
 - [Benchmarking Your Application](#benchmarking-your-application)
 - [Additional Resources](#additional-resources)
 
 ## Performance Overview
 
-NumCircBuf is designed for high-performance numerical computing with:
+NumCircBuf provides a suite of pre-allocated, contiguous-memory circular buffers engineered for low-latency ingestion and O(1) windowed analytics.
 
-- **O(1) time complexity** for most accumulator operations (mean, mean-square, gated accumulators)
-- **Memory efficiency** through pre-allocation
-- **Cython optimizations** with raw pointers for near-native speed
-- **BLAS-backed NumPy operations** for fast array math
-- **Thread-safe options** for concurrent read/write usage
-- **Exceptional bulk operation performance** with `.extend()` methods
+- **Constant-Time Analytics:** **O(1) complexity** for specific statistical accumulators (mean, mean-square), decoupling computational cost from buffer depth.
+- **Deterministic Memory Management:** Utilizes pre-allocated contiguous memory blocks to eliminate allocation jitter and heap fragmentation during high-frequency ingestion.
+- **Low-Level Execution:** Employs Cython/C with raw pointer arithmetic to bypass Python's object-model overhead and bounds-checking in critical execution paths.
+- **Hardware-Aware Vectorization:** Integrates BLAS-backed kernels, NumPy SIMD dispatch, and libc-optimized memcpy routines for architecture-specific throughput scaling.
+- **Optimized Data Ingestion:** Specifically engineered for bulk data movement via `.extend()`, maximizing hardware bandwidth saturation.
 
-**Target Use Cases**: Real-time signal processing, audio analysis, time-series data, scientific computing, and any application requiring efficient numerical buffers. The library is particularly optimized for bulk operations, making it ideal for high-throughput data processing.
+**Target Workloads:** Real-time digital signal processing (DSP), high-frequency telemetry ingestion, audio loudness analysis (EBU R128), and low-latency scientific computing.
 
 ## Performance Characteristics
 
 ### Time Complexity
 
-| Operation Type    | OverwriteCircBuffer  | BlockingCircBuffer   | Utility Buffers                |
-| ----------------- | -------------------- | -------------------- | ------------------------------ |
-| extend ops        | O(n)                 | O(n)                 | O(n)                           |
-| append ops        | O(1)                 | O(1)                 | O(1)                           |
-| `view()`          | O(1) view, O(n) copy | O(1) view, O(n) copy | O(1) view, O(n) copy           |
-| mathematical ops  | O(n)                 | N/A                  | O(n) / O(1) for some buffers\* |
-| `clear()`         | O(1)                 | O(1)                 | O(1)                           |
-| clear NaN or Infs | O(n)                 | O(n)                 | O(n)                           |
+| Operation Category | OverwriteCircBuffer  | BlockingCircBuffer   | Utility Buffers                |
+| ------------------ | -------------------- | -------------------- | ------------------------------ |
+| extend ops         | O(n)                 | O(n)                 | O(n)                           |
+| append ops         | O(1)                 | O(1)                 | O(1)                           |
+| `view()`           | O(1) view, O(n) copy | O(1) view, O(n) copy | O(1) view, O(n) copy           |
+| mathematical ops   | O(n)                 | N/A                  | O(n) / O(1) for some buffers\* |
+| `clear()`          | O(1)                 | O(1)                 | O(1)                           |
+| clear NaN or Infs  | O(n)                 | O(n)                 | O(n)                           |
 
 \* RunningMeanBuffer / RunningMeanSqBuffer may be O(1) or O(n) depending on focus; IntegratedGatedBuffer is always O(n)
 
 ### Space Complexity
 
-All buffers have O(n) space complexity where n is the buffer capacity.
-
-### Memory Efficiency
-
-- **Pre-allocated memory:** Buffers pre-allocate memory for maximum capacity
-- **Cython optimizations:** Minimizes Python object overhead
+- **Primary Storage**: $O(N)$ where $N$ is the buffer capacity.
+- **Transient Workspace**: Certain mathematical operations require temporary $O(K)$ workspace (where $K \leq N$) to ensure higher computational throughput. These allocations are transient and exist only for the duration of the specific operation.
 
 ## Core Benchmarking Methods
 
@@ -88,28 +81,29 @@ Follows the OverwriteCircBuffer method, with additional steps.
 
 ### CPU
 
-**AMD Ryzen 5 5600**:
+**AMD Ryzen 5 5600:**
 
-- **Cores / Threads**: 6 / 12
-- **Frequency (All Cores)**: ~4.44 GHz
-- **Cache L1 (per core) / L2 (per core) / L3 (shared)**: 64 KB / 512 KB / 32 MB
+- **Cores / Threads:** 6 / 12
+- **Frequency (All Cores):** ~4.44 GHz
+- **Cache L1 (per core) / L2 (per core) / L3 (shared):** 64 KB / 512 KB / 32 MB
 
 > CPU maintains ~4.44 GHz on all cores under load, ensuring relatively consistent performance regardless of thread scheduling.
 
 ### RAM
 
-**XPG SPECTRIX D35G**:
+**XPG SPECTRIX D35G:**
 
-- **Configuration**: 16 GB x 2
-- **Form Factor**: UDIMM
-- **Frequency**: 3666 MT/s
-- **CAS Latency**: 18-22-22-44
-- **Channels**: 2
+- **Configuration:** 16 GB x 2
+- **Form Factor:** UDIMM
+- **Frequency:** 3666 MT/s
+- **CAS Latency:** 18-22-22-44
+- **Channels:** 2
 
 ### Environment
 
-- **Python**: 3.12.12
-- **NumPy**: 2.4.1
+- **Windows 10 Pro:** 22H2 (19045.6456)
+- **Python:** 3.12.12
+- **NumPy:** 2.4.1
 
 ## Raw Benchmarks
 
@@ -435,46 +429,33 @@ Warm Cache: True
 
 ## Optimization Guide
 
-### Choosing the Right Buffer Type
+### Optimal Buffer Selection
 
-| Use Case          | Recommended Buffer      | Reason                                          |
-| ----------------- | ----------------------- | ----------------------------------------------- |
-| General purpose   | `OverwriteCircBuffer`   | Write-focused balanced performance and features |
-| Multi-threaded    | `BlockingCircBuffer`    | Read-Write Thread-safe with blocking operations |
-| Running averages  | `RunningMeanBuffer`     | Optimized mean calculations                     |
-| Signal processing | `RunningMeanSqBuffer`   | Optimized mean-square calculations              |
-| Audio loudness    | `IntegratedGatedBuffer` | Specialized for gated loudness calculations     |
+| Application Requirement       | Recommended Buffer      | Technical Justification                                                                                                                            |
+| :---------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **High-Throughput Ingestion** | `OverwriteCircBuffer`   | Minimum-overhead implementation using raw pointer arithmetic; optimized for single-threaded write-heavy workloads.                                 |
+| **Producer-Consumer Sync**    | `BlockingCircBuffer`    | Implements thread-safe synchronization primitives and strict FIFO ordering for multi-threaded environments without manual locking/ticketing logic. |
+| **Windowed Statistics**       | `RunningMeanBuffer`     | Maintains an internal $\sum x$ accumulator to provide **O(1) mean** calculation, decoupling latency from window size.                              |
+| **Power/Energy Analysis**     | `RunningMeanSqBuffer`   | Maintains an internal $\sum x^2$ accumulator for **O(1) mean-square** updates, ideal for real-time RMS calculations.                               |
+| **Non-Linear Analytics**      | `IntegratedGatedBuffer` | Specialized implementation for gated accumulation, minimizing branching overhead in integrated loudness pipelines.                                 |
 
 ### Performance Tips
 
-1. **Use `extend()` for bulk operations:** This is the library's specialty, offering exceptional performance for bulk data insertion. Much faster than individual `append()` calls.
-2. **Choose operation focus on runtime:** For `RunningMeanBuffer`/`RunningMeanSqBuffer`, choose operation focus using `determine_operation_focus` helper provided.
-3. **Use appropriate data types:** `np.float32` uses half the memory of `np.float64` with minimal precision loss for many applications.
-4. **Extend with NumPy Arrays of the same dtype**: The library supports conversion but the extends will be substantially slower as it causes a memory copy and wastes CPU cycles.
+1. **Use `extend()` for bulk operations:** Bulk operations minimize the frequency of Python-to-C context switching and allow the underlying engine to utilize vectorized memory copy routines.
+2. **Choose operation focus at runtime:** For `RunningMeanBuffer`/`RunningMeanSqBuffer`, choose operation focus using `determine_operation_focus` helper provided. This allows the internal logic to optimize for the required use-case on available hardware.
+3. **Precision and Cache Efficiency:** Use `np.float32` where full 64-bit precision is not mathematically required. Reducing the word size from 8 to 4 bytes effectively doubles the number of elements that can fit within the CPU caches and halves the required memory bus bandwidth.
+4. **Extend with NumPy Arrays of the same dtype**: The library supports conversion but the extends will be substantially slower as it triggers implicit type-casting and temporary array creation, which incurs a significant CPU and memory allocation penalty.
 
 ### Thread Safety Considerations
 
-- **BlockingCircBuffer**: Use for multi-threaded applications with proper timeout handling.
-- **Other buffers**: Not thread-safe by default - use external synchronization if needed.
-- **Lock contention**: Minimize time spent holding locks in thread-safe operations.
-- **Timeout strategies**: Use appropriate timeouts to avoid deadlocks.
+- **Atomic Constraints:** Standard buffer variants are not thread-safe and omit internal locking mechanisms to maximize single-threaded throughput. If multi-threaded access is required for these variants, external synchronization (e.g., `threading.Lock`) must be managed by the caller.
+- **Concurrency Scalability:** Increasing the thread count does not provide linear throughput scaling for thread-safe variants. High contention for the internal lock can degrade performance due to increased kernel-level context switching and synchronization overhead.
+- **Timeouts:** When utilizing `BlockingCircBuffer`, implement appropriate timeout strategies to prevent indefinite pipeline stalls. Unbounded blocking can lead to global deadlocks if a thread in the producer/consumer chain fails to release its dependency.
+- **Thread Integrity and Liveness:** To ensure strict FIFO ordering and deterministic execution, `BlockingCircBuffer` requires standard thread lifecycle management. Abrupt thread termination (e.g., via SIGKILL or hard cancellation) while a thread is performing or waiting on operations (read/write) will result in a permanent deadlock state. This design prioritizes high-performance state transitions and data integrity over the inherent unreliability of system-level thread monitoring.
 
-### Memory Management
+### Best Practices
 
-#### Memory Allocation Strategy
-
-1. **Pre-allocation**: All buffers pre-allocate memory for their maximum capacity.
-2. **Efficient growth**: Buffers don't reallocate - they have fixed capacity.
-
-#### Memory Cleanup
-
-- **Automatic cleanup**: Python's garbage collector and OS handles memory cleanup
-- **Manual cleanup**: Call `clear()` to reset buffer state without deallocation
-- **No memory leaks**: Proper reference counting ensures cleanup
-
-## Best Practices
-
-### Code Examples
+#### Code Examples
 
 ```python
 # Good: Use extend for bulk operations
@@ -509,38 +490,36 @@ for epoch in range(100):
 
 ## Conclusion
 
-NumCircBuf is designed for high-performance numerical buffers with:
+Standard Python containers like `collections.deque` are optimized for general-purpose use, but they don't perform as desired under the demands of high-throughput numerical workloads. The data above confirms that NumCircBuf effectively solves this problem.
 
-- **O(1) accumulator operations** for supported buffer types (mean, mean-square)
-- **Memory-efficient algorithms** using pre-allocation and minimal Python object creation
-- **Cython optimizations** with raw pointers for near-native speed
-- **BLAS-backed NumPy operations** for efficient array math
-- **Thread-safe options** available for specific buffers (e.g., BlockingCircBuffer)
+### Technical Summary
 
-By following the usage guidelines and choosing the appropriate buffer type, you can achieve optimal performance for real-time, high-throughput, or numerical computation workloads.
+- **Hardware-Adaptive SIMD Strategy:** The library utilizes NumPy’s internal runtime dispatch mechanism (Universal Intrinsics) to execute mathematical operations. By delegating execution to NumPy internals, NumCircBuf ensures that the most efficient SIMD kernels (such as AVX-512, AVX2, or NEON) are selected dynamically based on the host CPU. In addition, raw memory movement operations benefit from platform-optimized `memcpy` routines provided by the system C runtime, which utilize architecture-specific vectorized code paths. This combined approach provides a significant performance advantage over static Cython/C implementations, which often lack the cross-architecture portability and sophisticated runtime probing required to saturate modern CPU pipelines.
+- **Memory & Workspace Strategy:** The library utilizes a pre-allocated contiguous memory architecture for primary storage to prevent heap fragmentation. For some specific math operations, the implementations utilize temporary copies. This trade-off allows the library to perform mathematical operations at a higher throughput.
+- **Algorithmic Complexity:** Rolling statistical metrics (mean, mean-square) are implemented via **O(1) recurrence relations**. By maintaining internal accumulators, the computational cost of windowed analytics is decoupled from the buffer size, ensuring fixed-time execution even with extremely large window depths.
+- **Numerical Integrity & Precision:** Precision is enforced through type-strict execution paths. fp32 buffers perform explicit single-precision arithmetic to ensure bit-level determinism. The library implements a specialized handling policy for **IEEE 754 non-finite values (inf, nan)** that prioritizes data transparency over silent error correction. While the implementation performs a single-pass resynchronization of the accumulator to correct for numerical drift, it does not engage in persistent suppression of non-finite values. This ensures that if the input stream is corrupted, the internal state faithfully reflects that corruption rather than masking it through silent removal.
 
 ### Performance Comparison
 
-NumCircBuf is designed to saturate hardware limits (L3/DDR bandwidth), providing a massive performance leap over standard Python containers:
+NumCircBuf is designed to saturate the hardware bandwidth, providing a massive performance leap over standard Python containers:
 
 - **vs. `collections.deque` & Python lists**: **1000–1600× faster** for bulk `extend` and **2–4× faster** for single `append`.
-- **vs. Optimized NumPy Ring Buffers**: **1.05–4× faster** by leveraging raw C++ pointers and specialized wrapping logic to bypass Python/NumPy overhead.
+- **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**, reaching speeds where performance is limited primarily by hardware bandwidth.
 
 ### When to Use NumCircBuf
 
 **✅ Ideal for:**
 
-- Real-time data processing
-- Signal processing applications
-- Audio analysis and loudness measurement
-- High-frequency data collection
-- Any application needing efficient numerical buffers
+- High-frequency data ingestion (e.g., telemetry, sensors).
+- Real-time digital signal processing (DSP) and audio analysis.
+- Latency-sensitive workloads requiring O(1) statistical updates.
+- Scenarios requiring strict memory stability and zero-allocation loops.
 
 **❌ Consider alternatives for:**
 
-- Simple use cases where performance isn't critical
-- Applications requiring dynamic resizing of the buffers
-- Non-numeric data
+- Applications requiring dynamic resizing of buffers during runtime.
+- Storage of non-numeric or heterogeneous Python objects.
+- Simple use cases where the overhead of the Python interpreter is not a bottleneck.
 
 > Performance figures were obtained on representative workloads using the benchmark code above.
 > Actual performance may vary depending on hardware, data layout, and workload characteristics.
