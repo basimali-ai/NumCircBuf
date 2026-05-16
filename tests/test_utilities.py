@@ -226,7 +226,7 @@ def test_evict_arr():
 
 def test_get_cpu_name():
     res = bench_utils.get_cpu_name()
-    assert isinstance(res, str)
+    assert res and isinstance(res, str)
 
 
 def test_set_process_priority():
@@ -1445,10 +1445,75 @@ def test_deprecation_and_future_warning():
         assert w.remove_in_version == mock_remove_in_version
 
 
-def test_get_cpu_name_edge_cases(mocker):
-    mocker.patch("platform.processor", side_effect=["", " ", "    "])
-    for _ in range(3):
-        assert bench_utils.get_cpu_name() == "unknown_cpu"
+def test_get_cpu_name_linux_falls_back_to_hardware_line(mocker):
+    mocker.patch("sys.platform", "linux")
+    mocker.patch("platform.processor", return_value="")
+
+    for line, expected in [
+        ("Hardware\t: Qualcomm Technologies", "qualcomm_technologies"),
+        ("Processor\t: ARMv7", "armv7"),
+    ]:
+        mocker.patch(
+            "builtins.open",
+            mocker.mock_open(read_data=f"flags: fpu vme\n{line}\ncache size: 256 KB\n"),
+        )
+        assert bench_utils.get_cpu_name() == expected, (
+            f"Expected '{expected}' for cpuinfo line {line!r}"
+        )
+
+
+def test_get_cpu_name_exception_linux(mocker):
+    mocker.patch("sys.platform", "linux")
+    mocker.patch(
+        "builtins.open",
+        mocker.mock_open(read_data="flags: fpu vme\ncache size: 256 KB\n"),
+    )
+
+    for empty_value in ["", " ", "    "]:
+        mocker.patch("platform.processor", return_value=empty_value)
+        assert bench_utils.get_cpu_name() == "unknown_cpu", (
+            f"Expected 'unknown_cpu' for processor value {empty_value!r}"
+        )
+
+
+def test_get_cpu_name_exception_darwin(mocker):
+    mocker.patch("sys.platform", "darwin")
+    mocker.patch("platform.processor", return_value="")
+
+    for empty_value in ["", " ", "    "]:
+        mocker.patch(
+            "subprocess.check_output",
+            return_value=empty_value,
+        )
+        assert bench_utils.get_cpu_name() == "unknown_cpu", (
+            f"Expected 'unknown_cpu' for sysctl value {empty_value!r}"
+        )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only test")
+def test_get_cpu_name_exception_win32(mocker):
+    mocker.patch("platform.processor", return_value="")
+
+    mock_key = mocker.MagicMock()
+    mocker.patch("winreg.OpenKey", return_value=mock_key)
+    mocker.patch("winreg.CloseKey")
+
+    for empty_value in ["", " ", "    "]:
+        mocker.patch("winreg.QueryValueEx", return_value=(empty_value, None))
+        assert bench_utils.get_cpu_name() == "unknown_cpu", (
+            f"Expected 'unknown_cpu' for registry value {empty_value!r}"
+        )
+
+
+def test_get_cpu_name_exception_falls_back_to_processor(mocker):
+    mocker.patch("sys.platform", "linux")
+    mocker.patch("builtins.open", side_effect=OSError("Mock OSError"))
+
+    mocker.patch("platform.processor", return_value="Intel Core i7")
+    assert bench_utils.get_cpu_name() == "intel_core_i7"
+
+    mocker.patch("platform.processor", return_value="")
+    assert bench_utils.get_cpu_name() == "unknown_cpu"
 
 
 def test_trimmed_mean_times():
