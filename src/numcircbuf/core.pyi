@@ -523,9 +523,7 @@ class OverwriteCircBuffer:
         of overflow.
         """
 
-    def sum_and_count_gt(
-        self, threshold: float | int
-    ) -> tuple[float | int, int]:
+    def sum_and_count_gt(self, threshold: float | int) -> tuple[float | int, int]:
         """
         Calculates sum and count of values greater than `threshold`.
 
@@ -608,9 +606,7 @@ class RunningMeanSqBuffer:
 
         """
 
-    def extend(
-        self, block: Iterable[float | int], warn_size: bool = True
-    ) -> None:
+    def extend(self, block: Iterable[float | int], warn_size: bool = True) -> None:
         """
         Extends the buffer with a block of elements using
         vectorized operations.
@@ -623,9 +619,7 @@ class RunningMeanSqBuffer:
         :type warn_size: bool
         """
 
-    def extend_unchecked(
-        self, block_np: np.ndarray, warn_size: bool = True
-    ) -> None:
+    def extend_unchecked(self, block_np: np.ndarray, warn_size: bool = True) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -730,9 +724,7 @@ class RunningMeanBuffer:
         :type value: float | int
         """
 
-    def extend(
-        self, block: Iterable[float | int], warn_size: bool = True
-    ) -> None:
+    def extend(self, block: Iterable[float | int], warn_size: bool = True) -> None:
         """
         Extends the buffer with a block of elements using
         vectorized operations.
@@ -745,9 +737,7 @@ class RunningMeanBuffer:
         :type warn_size: bool
         """
 
-    def extend_unchecked(
-        self, block_np: np.ndarray, warn_size: bool = True
-    ) -> None:
+    def extend_unchecked(self, block_np: np.ndarray, warn_size: bool = True) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -803,9 +793,11 @@ class IntegratedGatedBuffer:
 
     Features fully vectorized operations, and caching for gated mean-square.
 
-    **Internal Storage:** This buffer stores the **square** of the input values.
-    Values retrieved via views will represent squared values,
-    not the original linear amplitude.
+    **Internal Storage:** This buffer stores values representing signal **power**
+    (the square of the amplitude). By default, input values are squared internally
+    before storage. However, if `already_squared` is set to True during input,
+    the values are stored as-is. Values retrieved via views will represent
+    these squared values.
 
     **Note:** This buffer is not thread safe.
 
@@ -858,42 +850,61 @@ class IntegratedGatedBuffer:
     def recalculate(self) -> None:
         """Recalculates gated sum and count from the buffer."""
 
-    def append(self, value: float | int) -> None:
+    def append(self, value: float | int, already_squared: bool = False) -> None:
         """
-        Appends a single linear amplitude value.
+        Appends a value to the buffer.
 
-        The value is squared internally, then stored in the buffer.
+        If `already_squared` is False, the value is treated as linear amplitude
+        and is squared internally before storage.
 
         (**Not Recommended for large data, Use extend if possible**)
 
         :param value: Value to append
         :type value: float | int
+        :param already_squared:
+            If True, skips the internal squaring operation.
+            Set this to True if the input is already signal power.
+        :type already_squared: bool
         """
 
     def extend(
-        self, block: Iterable[float | int], warn_size: bool = True
+        self,
+        block: Iterable[float | int],
+        warn_size: bool = True,
+        already_squared: bool = False,
     ) -> None:
         """
-        Extends the buffer with a block of linear amplitude values.
+        Extends the buffer with a block of values.
 
-        Values are squared internally using vectorized operations,
-        then stored in the buffer.
+        If `already_squared` is False, values are treated as linear amplitude
+        and squared internally using vectorized operations before storage.
 
-        :param block: Block of linear values to extend the buffer with.
+        :param block: Block of values to extend the buffer with.
         :type block: Iterable[float | int]
 
         :param warn_size:
             If you want to receive warnings when block size
             exceeds the buffer's maximum capacity.
         :type warn_size: bool
+
+        :param already_squared:
+            If True, skips the internal squaring operation.
+            Set this to True if the input block already contains signal power.
+        :type already_squared: bool
         """
 
     def extend_unchecked(
-        self, block_np: np.ndarray, warn_size: bool = True
+        self,
+        block_np: np.ndarray,
+        warn_size: bool = True,
+        already_squared: bool = False,
     ) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
-        of the same dtype as the buffer, that contains linear values.
+        of the same dtype as the buffer.
+
+        If `already_squared` is False, values are treated as linear amplitude
+        and squared internally using vectorized operations before storage.
 
         **WARNING:** This method skips all checks and will cause silent data
         corruption or crashes if the input array has the wrong dtype, shape, or
@@ -908,6 +919,11 @@ class IntegratedGatedBuffer:
             If you want to receive warnings when block size
             exceeds the buffer's maximum capacity.
         :type warn_size: bool
+
+        :param already_squared:
+            If True, skips the internal squaring operation.
+            Set this to True if the input array already contains signal power.
+        :type already_squared: bool
         """
 
     def gated_mean_square(self) -> float:

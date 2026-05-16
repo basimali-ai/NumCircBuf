@@ -38,3 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **README**: Correct `determine_operation_focus` signature.
 - Prevent file name collisions in multi-threaded workflows by appending unique IDs to temporary benchmark files created by `determine_operation_focus`.
+
+## [1.1.0] - 2026-05-16
+
+### Added
+
+- **IntegratedGatedBuffer:** `append`, `extend`, and `extend_unchecked` now accept an `already_squared: bool = False` argument. When `False`, inputs are treated as linear amplitude and squared internally before storage. Callers with pre-squared values no longer need to `sqrt` before passing them in.
+
+### Changed
+
+- **README:** Refine `Features` section.
+- **bench_utils.get_cpu_name:** Retrieves a more human-readable CPU name.

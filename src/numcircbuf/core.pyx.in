@@ -249,12 +249,6 @@ cdef str _iter_error_msg():
     )
 
 
-cdef str _block_dim_error_msg(str obj_repr, str func_name="extend"):
-    return (
-        f"\n{obj_repr}:\n{func_name} expects a 1-D block/array."
-    )
-
-
 # --- Generated filtering implementations ---
 {{for target in CLEAR_TARGETS}}
 {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
@@ -590,6 +584,21 @@ cdef void _shared_main_buffer_init(_MainBufferProtocolBase self, object maxlen) 
     )
 
 
+{{def coerce_to_1d_block_np}}
+        # >>> coerce_to_1d_block_np >>>
+        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
+            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
+        )
+        if cnp.PyArray_NDIM(block_np) != 1:
+            raise exceptions.NumCircBufValueError(
+                class_obj=self.__class__,
+                obj=self,
+                message=f"\n{repr(self)}:\n{{func_name}} expects a 1-D block/array."
+            )
+        # <<< coerce_to_1d_block_np <<<
+{{enddef}}
+
+
 cdef class BlockingCircBuffer(_MainBufferProtocolBase):
     def __cinit__(self, maxlen, dtype={{SupportedDtype.F64.value}}):
         # --- Generated dtype mapping ---
@@ -800,15 +809,9 @@ cdef class BlockingCircBuffer(_MainBufferProtocolBase):
     cdef bint write_extend_c(
         self, object block, double timeout = -1, bint warn_size = True
     ) except -1:
-        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
-            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
-        )
-        if cnp.PyArray_NDIM(block_np) != 1:
-            raise exceptions.NumCircBufValueError(
-                class_obj=self.__class__,
-                obj=self,
-                message=_block_dim_error_msg(repr(self), "write_extend")
-            )
+{{py: func_name = 'write_extend'}}
+{{coerce_to_1d_block_np}}
+{{py: del func_name}}
         return self.write_extend_unchecked_c(block_np, timeout, warn_size)
 
     def write_extend(
@@ -1591,15 +1594,10 @@ cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
         self, object block, bint return_overwritten=False, bint warn_size=True
     ):
         cdef _OverwrittenMode overwritten_mode = self.overwritten_mode
-        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
-            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
-        )
-        if cnp.PyArray_NDIM(block_np) != 1:
-            raise exceptions.NumCircBufValueError(
-                class_obj=self.__class__,
-                obj=self,
-                message=_block_dim_error_msg(repr(self))
-            )
+
+{{py: func_name = 'extend'}}
+{{coerce_to_1d_block_np}}
+{{py: del func_name}}
 
 {{shared_extend_dispatch_logic()}}
 
@@ -1700,15 +1698,9 @@ cdef class _UtilityBufferBP(_OverwriteCircBufferBPInclMath):
         self.extend_unchecked_c(block_np, warn_size)
 
     cdef void extend_c(self, object block, bint warn_size=True):
-        cdef cnp.ndarray block_np = cnp.PyArray_FROM_OTF(
-            block, self.c_dtype, cnp.NPY_ARRAY_FORCECAST | cnp.NPY_ARRAY_C_CONTIGUOUS
-        )
-        if cnp.PyArray_NDIM(block_np) != 1:
-            raise exceptions.NumCircBufValueError(
-                class_obj=self.__class__,
-                obj=self,
-                message=_block_dim_error_msg(repr(self))
-            )    
+{{py: func_name = 'extend'}}
+{{coerce_to_1d_block_np}}
+{{py: del func_name}}
         self.extend_unchecked_c(block_np, warn_size)
 
     def extend(self, block, bint warn_size=True):
@@ -1888,8 +1880,8 @@ cdef void _shared_utility_buffer_init_with_operation_focus(
             # >>> shared_operation_focus_append_logic >>>
             {{if not is_f64}}
             value_{{suffix}} = <{{c_type}}> value
-
             {{endif}}
+
             if self.is_extend_focused:
                 overwritten_never_append[{{c_type}}](
                     <{{c_type}}*>self.buffer_ptr,
@@ -2148,7 +2140,9 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{py: _value = 'value' if is_f64 else 'value_' + suffix}}
         {{'if self.is_double' if is_f64 else 'else'}}:
+
 {{shared_operation_focus_append_logic()}}
+
             if overwritten:
                 self.sum_accum_{{suffix}} += {{_value}} - overwritten_{{suffix}}
                 if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
@@ -2361,7 +2355,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         self.abs_gated_count_accum = 0
         self._cached_gated_mean_sq = NAN
 
-    cdef void append_c(self, double value) noexcept:
+    cdef void append_c(self, double value, bint already_squared=False) noexcept:
 {{shared_utility_buffer_append_locals()}}
             # --- Generated result locals ---
             {{for suffix, _, struct_type, _ in FP_SUM_COUNT_GROUPS}}
@@ -2378,9 +2372,10 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '> self.abs_gate_lin_sq'}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             {{if not is_f64}}
-            value_{{suffix}} = <{{c_type}}> value
+            {{_value}} = <{{c_type}}> value
             {{endif}}
-            {{_value}} *= {{_value}}
+            if not already_squared:
+                {{_value}} *= {{_value}}
 
 {{shared_utility_buffer_append_logic()}}
             if (
@@ -2419,10 +2414,12 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         {{endfor}}
         # --------------------------------
 
-    def append(self, double value):
-        self.append_c(value)
+    def append(self, double value, bint already_squared=False):
+        self.append_c(value, already_squared)
 
-    cdef void extend_unchecked_c(self, cnp.ndarray block_np, bint warn_size=True):
+    cdef void extend_unchecked_c(
+        self, cnp.ndarray block_np, bint warn_size=True, bint already_squared=False
+    ):
         cdef:
             size_t n = cnp.PyArray_DIM(block_np, 0)
             size_t count_to_remove
@@ -2439,7 +2436,11 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         if n == 0: return
 
         self._cached_gated_mean_sq = NAN
-        sq_block_np = block_np * block_np
+
+        if already_squared:
+            sq_block_np = block_np
+        else:
+            sq_block_np = block_np * block_np
 
         if n >= self._maxlen:
             extend_never(self, sq_block_np, warn_size)
@@ -2515,6 +2516,18 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         {{''}}
         {{endfor}}
         # --------------------------------
+
+    def extend_unchecked(self, cnp.ndarray block_np, bint warn_size=True, bint already_squared=False):
+        self.extend_unchecked_c(block_np, warn_size, already_squared)
+
+    cdef void extend_c(self, object block, bint warn_size=True, bint already_squared=False):
+{{py: func_name = 'extend'}}
+{{coerce_to_1d_block_np}}
+{{py: del func_name}}
+        self.extend_unchecked_c(block_np, warn_size, already_squared)
+
+    def extend(self, block, bint warn_size=True, bint already_squared=False):
+        self.extend_c(block, warn_size, already_squared)
 
     cdef double gated_mean_square_c(self) noexcept:
         cdef:

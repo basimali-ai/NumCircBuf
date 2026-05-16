@@ -184,7 +184,9 @@ cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
 
         # --- Generated append_capture signatures ---
         {{for suffix, c_type, _, _ in TYPE_DEFINITIONS_EXPANDED}}
-        cdef bint append_{{suffix}}_capture(self, {{c_type}} value, {{c_type}}* out_overwritten) noexcept nogil
+        cdef bint append_{{suffix}}_capture(
+            self, {{c_type}} value, {{c_type}}* out_overwritten
+        ) noexcept nogil
         {{endfor}}
         # --------------------------------
 
@@ -266,5 +268,11 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         # --------------------------------
         
         size_t abs_gated_count_accum
+
+        void append_c(self, double value, bint already_squared=*) noexcept
+        void extend_unchecked_c(
+            self, cnp.ndarray block_np, bint warn_size=*, bint already_squared=*
+        )
+        void extend_c(self, object block, bint warn_size=*, bint already_squared=*)
 
         double gated_mean_square_c(self) noexcept

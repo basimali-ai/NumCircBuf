@@ -63,28 +63,28 @@ OVERFLOW_CASES_ALL = OVERFLOW_CASES_FP + [
 ]
 
 
-def _append(buf, value):
-    return buf.append(value)
+def _append(buf, value, **kwargs):
+    return buf.append(value, **kwargs)
 
 
-def _extend(buf, block):
-    return buf.extend(block)
+def _extend(buf, block, **kwargs):
+    return buf.extend(block, **kwargs)
 
 
-def _extend_unchecked(buf, np_block):
-    return buf.extend_unchecked(np_block)
+def _extend_unchecked(buf, block_np, **kwargs):
+    return buf.extend_unchecked(block_np, **kwargs)
 
 
-def _write_append(buf, value):
-    return buf.write_append(value)
+def _write_append(buf, value, **kwargs):
+    return buf.write_append(value, **kwargs)
 
 
-def _write_extend(buf, block):
-    return buf.write_extend(block)
+def _write_extend(buf, block, **kwargs):
+    return buf.write_extend(block, **kwargs)
 
 
-def _write_extend_unchecked(buf, np_block):
-    return buf.write_extend_unchecked(np_block)
+def _write_extend_unchecked(buf, block_np, **kwargs):
+    return buf.write_extend_unchecked(block_np, **kwargs)
 
 
 MAIN_BUFFERS = {
@@ -171,6 +171,18 @@ UTIL_BUFFERS = {
         "append": _append,
         "extend": _extend,
         "extend_unchecked": _extend_unchecked,
+    },
+    "IntegratedGatedBuffer_already_squared": {
+        "init": lambda maxlen, dtype=None: IntegratedGatedBuffer(
+            maxlen, -70, 10, **({"dtype": dtype} if dtype is not None else {})
+        ),
+        "append": lambda buf, value: _append(buf, value, already_squared=True),
+        "extend": lambda buf, block, warn_size=True: _extend(
+            buf, block, warn_size=warn_size, already_squared=True
+        ),
+        "extend_unchecked": lambda buf, block_np, warn_size=True: _extend_unchecked(
+            buf, block_np, warn_size=warn_size, already_squared=True
+        ),
     },
 }
 
@@ -677,33 +689,36 @@ def test_util_buf_overflow_situations(buf_name, buf_funcs, capacity):
                 assert buf.view()[0] == expected
 
 
-def _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype):
+def _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype, warn_size):
     buf = buf_funcs["init"](capacity, dtype)
 
     exceeds_capacity_list = list(range(capacity * 2))
     exceeds_capacity_arr = np.array(exceeds_capacity_list, dtype=dtype)
-    with pytest.warns(DataSizeWarning) as record:
-        buf_funcs["extend"](buf, exceeds_capacity_list)
+
+    with warnings.catch_warnings(record=True) as record:
+        buf_funcs["extend"](buf, exceeds_capacity_list, warn_size=warn_size)
         if buf_name == "BlockingCircBuffer":
             buf.read()
-        buf_funcs["extend_unchecked"](buf, exceeds_capacity_arr)
+        buf_funcs["extend_unchecked"](buf, exceeds_capacity_arr, warn_size=warn_size)
 
-    expected_record_len = 2
-    assert len(record) == expected_record_len
-    for i in range(expected_record_len):
-        w = record[i].message
-        assert isinstance(w, DataSizeWarning)
-        assert w.obj is buf
-        assert w.data_size == len(exceeds_capacity_list)
-        assert w.maxlen == buf.maxlen
+    if warn_size:
+        assert len(record) == 2
+        for r in record:
+            w = r.message
+            assert isinstance(w, DataSizeWarning)
+            assert w.obj is buf
+            assert w.data_size == len(exceeds_capacity_list)
+            assert w.maxlen == buf.maxlen
+    else:
+        assert len(record) == 0
 
     if buf_name == "BlockingCircBuffer":
         buf.read()
 
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        buf_funcs["extend"](buf, list(range(capacity)))
-    assert len(record) == 0, f"Expected no warnings, but got {len(record)}"
+        buf_funcs["extend"](buf, list(range(capacity)), warn_size=warn_size)
+    assert len(record) == 0
 
 
 def _test_extend_dim_exceptions(buf_funcs, capacity, dtype):
@@ -743,8 +758,9 @@ def test_util_buf_extend_dim_exceptions(buf_name, buf_funcs, capacity, dtype):
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_ALL)
-def test_main_buf_data_size_warnings(buf_name, buf_funcs, capacity, dtype):
-    _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype)
+@pytest.mark.parametrize("warn_size", (True, False))
+def test_main_buf_data_size_warnings(buf_name, buf_funcs, capacity, dtype, warn_size):
+    _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype, warn_size)
 
 
 @pytest.mark.parametrize(
@@ -752,5 +768,6 @@ def test_main_buf_data_size_warnings(buf_name, buf_funcs, capacity, dtype):
 )
 @pytest.mark.parametrize("capacity", CAPACITIES)
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
-def test_util_buf_data_size_warnings(buf_name, buf_funcs, capacity, dtype):
-    _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype)
+@pytest.mark.parametrize("warn_size", (True, False))
+def test_util_buf_data_size_warnings(buf_name, buf_funcs, capacity, dtype, warn_size):
+    _test_data_size_warnings(buf_name, buf_funcs, capacity, dtype, warn_size)

@@ -179,6 +179,44 @@ def get_cpu_name() -> str:
     :rtype: str
     """
     name = platform.processor().strip()
+
+    try:
+        if sys.platform == "win32":
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+            )
+            processor_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            name = processor_name.strip()
+
+        elif sys.platform == "linux":
+            with open("/proc/cpuinfo", "r", encoding="utf8") as f:
+                cpuinfo = f.read()
+
+            for line in cpuinfo.splitlines():
+                if "model name" in line:
+                    name = line.split(":", 1)[1].strip()
+                    break
+            else:
+                for line in cpuinfo.splitlines():
+                    if line.startswith("Hardware") or line.startswith("Processor"):
+                        name = line.split(":", 1)[1].strip()
+                        break
+
+        elif sys.platform == "darwin":
+            import subprocess
+
+            name = subprocess.check_output(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                text=True,
+            ).strip()
+
+    except Exception:  # pragma: no cover
+        pass
+
     if not name:
         return "unknown_cpu"
 
@@ -187,7 +225,8 @@ def get_cpu_name() -> str:
     name = re.sub(r"@.*", "", name)
     name = re.sub(r"[^\w]+", "_", name)
     name = re.sub(r"_+", "_", name).strip("_")
-    return name
+
+    return name if name else "unknown_cpu"
 
 
 def touch_pages(
@@ -254,13 +293,9 @@ def set_process_priority(priority: Literal["high", "normal"] = "high"):
             handle = ctypes.windll.kernel32.GetCurrentProcess()
 
             if priority == "high":
-                ctypes.windll.kernel32.SetPriorityClass(
-                    handle, HIGH_PRIORITY_CLASS
-                )
+                ctypes.windll.kernel32.SetPriorityClass(handle, HIGH_PRIORITY_CLASS)
             elif priority == "normal":
-                ctypes.windll.kernel32.SetPriorityClass(
-                    handle, NORMAL_PRIORITY_CLASS
-                )
+                ctypes.windll.kernel32.SetPriorityClass(handle, NORMAL_PRIORITY_CLASS)
         elif sys.platform == "linux" or sys.platform == "darwin":
             if priority == "high":
                 os.nice(-10)
@@ -322,9 +357,7 @@ def trimmed_mean_times(arr: np.ndarray, return_int: bool) -> int | float:
         result = float(arr[drop:].mean())
 
     if math.isnan(result):
-        raise NumCircBufArithmeticError(
-            message="The trimmed mean resulted in NaN."
-        )
+        raise NumCircBufArithmeticError(message="The trimmed mean resulted in NaN.")
 
     if return_int:
         if math.isinf(result):
@@ -952,9 +985,7 @@ def prepare_blocks(
             mode="r",
             shape=offset_data_shape,
         )
-        offset = offset_blocks_full[
-            : n_runs // 2, : maxlen - (block_size // 2)
-        ]
+        offset = offset_blocks_full[: n_runs // 2, : maxlen - (block_size // 2)]
     else:
         raise NumCircBufValueError(
             message="Multiple offset blocks requested but the "
@@ -1528,9 +1559,7 @@ class RefPythonNumPyCircBuffer:
         else:
             buffer = self.buffer
             first_part = maxlen - write_head
-            buffer[write_head : write_head + first_part] = block_np[
-                :first_part
-            ]
+            buffer[write_head : write_head + first_part] = block_np[:first_part]
             buffer[: n - first_part] = block_np[first_part:]
 
         write_head += n

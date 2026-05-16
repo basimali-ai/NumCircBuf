@@ -38,16 +38,20 @@ Built with Cython for a balance between performance and maintainability, it prov
 
 ## Features
 
-- **Multiple Buffer Types** – includes specialized buffers for different needs:
-  - **BlockingCircBuffer** – blocking producer/consumer circular buffer for multi-threaded applications.
-  - **OverwriteCircBuffer** – optimized for high-throughput writes
-  - **IntegratedGatedBuffer** – specialized for calculating gated loudness/energy statistics
-  - **O(1) Accumulators** – constant-time operations for statistics, implemented in specialized buffers:
+- **Multiple Buffer Types** – Specialized implementations for different use cases:
+  - **BlockingCircBuffer** – Blocking producer/consumer circular buffer for multi-threaded applications.
+  - **OverwriteCircBuffer** – Optimized for high-throughput writes
+  - **IntegratedGatedBuffer** – Specifically for calculating gated loudness/energy statistics
+  - **O(1) Accumulators** – Constant-time operations for statistics, implemented in specialized buffers:
     - **RunningMeanBuffer** – O(1) mean
     - **RunningMeanSqBuffer** – O(1) mean-square
-- **NumPy Integration**: Seamless integration with NumPy arrays.
-- **Type Safety**: supports fp32, fp64, int32, int64, uint32, uint64.
-- **Comprehensive Documentation**: Detailed documentation and performance benchmarks.
+- **High Performance** – Bypasses Python/NumPy overhead to saturate the hardware bandwidth. Details in [PERFORMANCE.md](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md):
+  - **vs. `collections.deque` & Python lists**: **1000–1600× faster** for bulk `extend` and **2–4× faster** for single `append`.
+  - **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**, reaching speeds where performance is limited primarily by hardware bandwidth.
+- **Familiar API:** Buffers use `append`, `extend`, and `clear` methods for drop-in compatibility.
+- **NumPy Integration:** Direct integration with NumPy arrays.
+- **Type Safety:** Fully typed; supports fp32, fp64, int32, int64, uint32, and uint64.
+- **Docs & Performance:** Includes extensive API documentation, usage examples, and detailed performance benchmarks across all buffer types.
 
 ## Installation
 
@@ -520,8 +524,11 @@ A specialized circular buffer for calculating gated loudness.
 
 Features fully vectorized operations, and caching for gated mean-square.
 
-**Internal Storage:** This buffer stores the **square** of the input values.
-Values retrieved via views will represent squared values, not the original linear amplitude.
+**Internal Storage:**
+This buffer stores values representing signal **power** (the square of the amplitude).
+By default, input values are squared internally before storage.
+However, if `already_squared` is set to True during input, the values are stored as-is.
+Values retrieved via views will represent these squared values.
 
 **Note:** This buffer is not thread safe.
 
@@ -669,32 +676,26 @@ extend_and_catch(buffer, range(10))
 
 ## Performance
 
-NumCircBuf is optimized for speed and efficiency:
-
-- **Cython + raw C pointers** – for near-C performance
-- **Minimal Python object creation** – slices/views reused, caching reduces repeated calculations
-- **BLAS-backed NumPy operations** – for efficient array math
-- **O(1) accumulator operations** – for real-time applications
-- **Handles high-throughput buffers** – for streaming data like audio or sensor signals
+NumCircBuf provides a suite of pre-allocated, contiguous-memory circular buffers engineered for low-latency ingestion and O(1) windowed analytics.
 
 ### Benchmark Results
 
-For detailed performance benchmarks, see the [PERFORMANCE.md](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md) document which includes comprehensive testing results across different buffer types and use cases.
+For detailed performance benchmarks, see the [PERFORMANCE.md](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md) document which includes testing results across different buffer types and use cases.
 
 **Key Performance Highlights:**
 
 - **Throughput** (extending 64 KiB of data to `OverwriteCircBuffer`):
   - **Cold cache (data)**:
-    - AMD R7700x (DDR5): ~50 GB/s
-    - AMD R5600 (DDR4): ~30 GB/s
+    - AMD R7700x (DDR5): **~50 GB/s**
+    - AMD R5600 (DDR4): **~30 GB/s**
 
   - **Warm cache (data)**:
-    - AMD R7700x (DDR5): ~73 GB/s
-    - AMD R5600 (DDR4): ~50 GB/s
+    - AMD R7700x (DDR5): **~73 GB/s**
+    - AMD R5600 (DDR4): **~50 GB/s**
 
 ## Documentation
 
-- **[Performance Benchmarks](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md):** Comprehensive performance testing results and optimization guide.
+- **[Performance Benchmarks](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md):** Benchmark results and optimization guide.
 - **[Versioning Strategy](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/VERSIONING.md):** Versioning policy, release process, and compatibility guarantees.
 
 ## Changelog
@@ -722,7 +723,7 @@ If you use NumCircBuf in your research or projects, please cite it as:
   title = {NumCircBuf: High-Performance Numerical Circular Buffers for Python},
   year = {2026},
   url = {https://github.com/basimali-ai/NumCircBuf},
-  version = {1.0.3}
+  version = {1.1.0}
 }
 ```
 
