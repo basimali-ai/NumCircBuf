@@ -7,22 +7,23 @@ This document provides performance benchmarks and optimization guidelines for th
 - [Performance Overview](#performance-overview)
 - [Performance Characteristics](#performance-characteristics)
 - [Core Benchmarking Methods](#core-benchmarking-methods)
+- [Benchmarking Systems](#benchmarking-systems)
 - [Raw Benchmarks](#raw-benchmarks)
 - [Relative Benchmarks](#relative-benchmarks)
 - [Optimization Guide](#optimization-guide)
 - [Conclusion](#conclusion)
-- [Benchmarking Your Application](#benchmarking-your-application)
+- [Running Benchmarks](#running-benchmarks)
 - [Additional Resources](#additional-resources)
 
 ## Performance Overview
 
-NumCircBuf provides a suite of pre-allocated, contiguous-memory circular buffers engineered for low-latency ingestion and O(1) windowed analytics.
+NumCircBuf provides contiguous, pre-allocated circular buffers designed for high-throughput ingestion and O(1) windowed analytics.
 
-- **Constant-Time Analytics:** **O(1) complexity** for specific statistical accumulators (mean, mean-square), decoupling computational cost from buffer depth.
-- **Deterministic Memory Management:** Utilizes pre-allocated contiguous memory blocks to eliminate allocation jitter and heap fragmentation during high-frequency ingestion.
-- **Low-Level Execution:** Employs Cython/C with raw pointer arithmetic to bypass Python's object-model overhead and bounds-checking in critical execution paths.
-- **Hardware-Aware Vectorization:** Integrates BLAS-backed kernels, NumPy SIMD dispatch, and libc-optimized memcpy routines for architecture-specific throughput scaling.
-- **Optimized Data Ingestion:** Specifically engineered for bulk data movement via `.extend()`, maximizing hardware bandwidth saturation.
+- **O(1) Analytics:** Implemented in specialized variants (RunningMeanBuffer, RunningMeanSqBuffer), separating computational cost from buffer depth.
+- **Jitter & Fragmentation Mitigation:** Pre-allocated contiguous memory blocks eliminate allocation jitter and heap fragmentation during high-frequency ingestion.
+- **Low-Level Execution:** Uses Cython/C with raw pointer arithmetic to bypass Python's object-model overhead and bounds-checking in hot paths.
+- **Hardware-Adaptive:** Architecture-specific throughput scaling through BLAS-backed kernels, NumPy SIMD dispatch, and libc memcpy routines.
+- **Optimized Data Ingestion:** Bulk data movement via `.extend()`, maximizes single-threaded hardware bandwidth saturation.
 
 **Target Workloads:** Real-time digital signal processing (DSP), high-frequency telemetry ingestion, audio loudness analysis (EBU R128), and low-latency scientific computing.
 
@@ -30,21 +31,28 @@ NumCircBuf provides a suite of pre-allocated, contiguous-memory circular buffers
 
 ### Time Complexity
 
-| Operation Category | OverwriteCircBuffer  | BlockingCircBuffer   | Utility Buffers                |
-| ------------------ | -------------------- | -------------------- | ------------------------------ |
-| extend ops         | O(n)                 | O(n)                 | O(n)                           |
-| append ops         | O(1)                 | O(1)                 | O(1)                           |
-| `view()`           | O(1) view, O(n) copy | O(1) view, O(n) copy | O(1) view, O(n) copy           |
-| mathematical ops   | O(n)                 | N/A                  | O(n) / O(1) for some buffers\* |
-| `clear()`          | O(1)                 | O(1)                 | O(1)                           |
-| clear NaN or Infs  | O(n)                 | O(n)                 | O(n)                           |
+#### Common Operations (All Buffer Categories)
 
-\* RunningMeanBuffer / RunningMeanSqBuffer may be O(1) or O(n) depending on focus; IntegratedGatedBuffer is always O(n)
+| Operation Category | Complexity               |
+| ------------------ | ------------------------ |
+| extend             | $O(n)$                   |
+| append             | $O(1)$                   |
+| `view()`           | $O(1)$ view, $O(n)$ copy |
+| `clear()`          | $O(1)$                   |
+| clear NaN or Infs  | $O(n)$                   |
+
+#### Buffer-Specific Operations
+
+| Operation Category | OverwriteCircBuffer | BlockingCircBuffer | Utility Buffers                    |
+| ------------------ | ------------------- | ------------------ | ---------------------------------- |
+| statistics         | $O(n)$              | N/A                | $O(n)$ / $O(1)$ for some buffers\* |
+
+\* RunningMeanBuffer / RunningMeanSqBuffer may be $O(1)$ or $O(n)$ depending on operation focus; IntegratedGatedBuffer is always $O(n)$ due to relative gating
 
 ### Space Complexity
 
 - **Primary Storage**: $O(N)$ where $N$ is the buffer capacity.
-- **Transient Workspace**: Certain mathematical operations require temporary $O(K)$ workspace (where $K \leq N$) to ensure higher computational throughput. These allocations are transient and exist only for the duration of the specific operation.
+- **Transient Workspace**: Certain mathematical operations require temporary $O(K)$ workspace (where $K \leq N$) for higher computational throughput. These allocations exist only for the duration of the specific operation.
 
 ## Core Benchmarking Methods
 
@@ -77,19 +85,45 @@ Follows the OverwriteCircBuffer method, with additional steps.
 2. A mask determines after how many blocks the calculation function is called.
 3. On 'Calculate' runs, we measure the extend operation plus calculation function call.
 
-## Benchmarking System
+## Benchmarking Systems
 
-### CPU
+### System A
+
+#### CPU
+
+**AMD Ryzen 7 7700x:**
+
+- **Cores / Threads:** 8 / 16
+- **Frequency:** ~5.10–5.35 GHz
+- **Cache L1 (per core) / L2 (per core) / L3 (shared):** 64 KB / 1 MB / 32 MB
+
+#### RAM
+
+**TeamGroup T-Force Delta RGB DDR5-6400:**
+
+- **Configuration:** 16 GB x 2
+- **Form Factor:** UDIMM
+- **Frequency:** 6000 MT/s
+- **CAS Latency:** 38-38-38-78
+- **Channels:** 2
+
+#### Environment
+
+- **Windows 11 Pro:** 25H2 (26200.8457)
+- **Python:** 3.12.12
+- **NumPy:** 2.4.1
+
+### System B
+
+#### CPU
 
 **AMD Ryzen 5 5600:**
 
 - **Cores / Threads:** 6 / 12
-- **Frequency (All Cores):** ~4.44 GHz
+- **Frequency:** ~4.44 GHz
 - **Cache L1 (per core) / L2 (per core) / L3 (shared):** 64 KB / 512 KB / 32 MB
 
-> CPU maintains ~4.44 GHz on all cores under load, ensuring relatively consistent performance regardless of thread scheduling.
-
-### RAM
+#### RAM
 
 **XPG SPECTRIX D35G:**
 
@@ -99,7 +133,7 @@ Follows the OverwriteCircBuffer method, with additional steps.
 - **CAS Latency:** 18-22-22-44
 - **Channels:** 2
 
-### Environment
+#### Environment
 
 - **Windows 10 Pro:** 22H2 (19045.6456)
 - **Python:** 3.12.12
@@ -119,36 +153,70 @@ MAXLEN_BYTE_LIMIT = 65_536
 BLOCK_BYTE_LIMIT = 65_536
 ```
 
-**Results:**
+#### Results
+
+**System A:**
 
 ```text
 --- Extend ---
 
 Warm Cache: False
-OverwriteCircBuffer throughput: 31.57 GB/s
-RefPythonNumPyCircBuffer throughput: 14.65 GB/s
-BenchDeque throughput: 0.03 GB/s
-BenchList throughput: 0.03 GB/s
+OverwriteCircBuffer throughput: 35.2 GB/s
+RefPythonNumPyCircBuffer throughput: 19 GB/s
+BenchDeque throughput: 0.06238 GB/s
+BenchList throughput: 0.06327 GB/s
 
 Warm Cache: True
-OverwriteCircBuffer throughput: 48.73 GB/s
-RefPythonNumPyCircBuffer throughput: 17.21 GB/s
-BenchDeque throughput: 0.03 GB/s
-BenchList throughput: 0.03 GB/s
+OverwriteCircBuffer throughput: 72.98 GB/s
+RefPythonNumPyCircBuffer throughput: 26.36 GB/s
+BenchDeque throughput: 0.06234 GB/s
+BenchList throughput: 0.06296 GB/s
 
 --- Append ---
 
 Warm Cache: False
-OverwriteCircBuffer throughput: 0.08 GB/s
-RefPythonNumPyCircBuffer throughput: 0.02 GB/s
-BenchDeque throughput: 0.05 GB/s
-BenchList throughput: 0.03 GB/s
+OverwriteCircBuffer throughput: 0.1455 GB/s
+RefPythonNumPyCircBuffer throughput: 0.0442 GB/s
+BenchDeque throughput: 0.09412 GB/s
+BenchList throughput: 0.0597 GB/s
 
 Warm Cache: True
-OverwriteCircBuffer throughput: 0.09 GB/s
-RefPythonNumPyCircBuffer throughput: 0.03 GB/s
-BenchDeque throughput: 0.05 GB/s
-BenchList throughput: 0.03 GB/s
+OverwriteCircBuffer throughput: 0.1455 GB/s
+RefPythonNumPyCircBuffer throughput: 0.04494 GB/s
+BenchDeque throughput: 0.09195 GB/s
+BenchList throughput: 0.0597 GB/s
+```
+
+**System B:**
+
+```text
+--- Extend ---
+
+Warm Cache: False
+OverwriteCircBuffer throughput: 32.59 GB/s
+RefPythonNumPyCircBuffer throughput: 14.81 GB/s
+BenchDeque throughput: 0.0334 GB/s
+BenchList throughput: 0.03396 GB/s
+
+Warm Cache: True
+OverwriteCircBuffer throughput: 50.53 GB/s
+RefPythonNumPyCircBuffer throughput: 17.35 GB/s
+BenchDeque throughput: 0.0328 GB/s
+BenchList throughput: 0.03329 GB/s
+
+--- Append ---
+
+Warm Cache: False
+OverwriteCircBuffer throughput: 0.08791 GB/s
+RefPythonNumPyCircBuffer throughput: 0.02524 GB/s
+BenchDeque throughput: 0.05594 GB/s
+BenchList throughput: 0.03162 GB/s
+
+Warm Cache: True
+OverwriteCircBuffer throughput: 0.08889 GB/s
+RefPythonNumPyCircBuffer throughput: 0.02564 GB/s
+BenchDeque throughput: 0.05674 GB/s
+BenchList throughput: 0.03226 GB/s
 ```
 
 ### BlockingCircBuffer
@@ -163,28 +231,54 @@ MAXLEN_BYTE_LIMIT = 65_536
 BLOCK_BYTE_LIMIT = 65_536
 ```
 
-**Results:**
+#### Results
+
+**System A:**
 
 ```text
 Warm Cache: False
 Read Into Array Used: False
-BlockingCircBuffer Write throughput: 25.81 GB/s
-BlockingCircBuffer Read throughput: 28.21 GB/s
+BlockingCircBuffer Write throughput: 25.78 GB/s
+BlockingCircBuffer Read throughput: 40.4 GB/s
 
 Warm Cache: False
 Read Into Array Used: True
-BlockingCircBuffer Write throughput: 23.36 GB/s
-BlockingCircBuffer Read throughput: 35.39 GB/s
+BlockingCircBuffer Write throughput: 24.99 GB/s
+BlockingCircBuffer Read throughput: 44.16 GB/s
 
 Warm Cache: True
 Read Into Array Used: False
-BlockingCircBuffer Write throughput: 35.29 GB/s
-BlockingCircBuffer Read throughput: 28.25 GB/s
+BlockingCircBuffer Write throughput: 44.28 GB/s
+BlockingCircBuffer Read throughput: 40.66 GB/s
 
 Warm Cache: True
 Read Into Array Used: True
-BlockingCircBuffer Write throughput: 33.78 GB/s
-BlockingCircBuffer Read throughput: 35.97 GB/s
+BlockingCircBuffer Write throughput: 45.86 GB/s
+BlockingCircBuffer Read throughput: 44.31 GB/s
+```
+
+**System B:**
+
+```text
+Warm Cache: False
+Read Into Array Used: False
+BlockingCircBuffer Write throughput: 22.11 GB/s
+BlockingCircBuffer Read throughput: 23.81 GB/s
+
+Warm Cache: False
+Read Into Array Used: True
+BlockingCircBuffer Write throughput: 22.33 GB/s
+BlockingCircBuffer Read throughput: 29.71 GB/s
+
+Warm Cache: True
+Read Into Array Used: False
+BlockingCircBuffer Write throughput: 29.4 GB/s
+BlockingCircBuffer Read throughput: 23.15 GB/s
+
+Warm Cache: True
+Read Into Array Used: True
+BlockingCircBuffer Write throughput: 30.1 GB/s
+BlockingCircBuffer Read throughput: 29.36 GB/s
 ```
 
 ### Utility/Calculation Buffers
@@ -199,62 +293,123 @@ MAXLENS = (4096, 8192, 16_384, 32_768, 65_536)
 BLOCK_SIZES = (4096, 8192, 16_384, 32_768, 65_536)
 ```
 
-**Results:**
+#### Results
+
+**System A:**
 
 ```text
 ----------
 RunningMeanSqBuffer :
 Warm Cache: False
-~835–5524M float32 elems/sec (extend + calculation)
-3.34–22.10 GB/s effective throughput
+~1248–7107M float32 elems/sec (extend + calculation)
+4.992–28.43 GB/s effective throughput
+----------
+Warm Cache: True
+~1405–10089M float32 elems/sec (extend + calculation)
+5.619–40.35 GB/s effective throughput
 ----------
 Warm Cache: False
-~159–1879M float64 elems/sec (extend + calculation)
-1.28–15.03 GB/s effective throughput
+~296–2588M float64 elems/sec (extend + calculation)
+2.372–20.71 GB/s effective throughput
 ----------
 Warm Cache: True
-~861–6121M float32 elems/sec (extend + calculation)
-3.44–24.49 GB/s effective throughput
-----------
-Warm Cache: True
-~162–2472M float64 elems/sec (extend + calculation)
-1.30–19.78 GB/s effective throughput
+~292–3633M float64 elems/sec (extend + calculation)
+2.333–29.06 GB/s effective throughput
 ----------
 ----------
 RunningMeanBuffer :
 Warm Cache: False
-~347–2566M float32 elems/sec (extend + calculation)
-1.39–10.26 GB/s effective throughput
+~571–3743M float32 elems/sec (extend + calculation)
+2.284–14.97 GB/s effective throughput
+----------
+Warm Cache: True
+~611–4749M float32 elems/sec (extend + calculation)
+2.442–19 GB/s effective throughput
 ----------
 Warm Cache: False
-~304–1926M float64 elems/sec (extend + calculation)
-2.43–15.41 GB/s effective throughput
+~490–2515M float64 elems/sec (extend + calculation)
+3.923–20.12 GB/s effective throughput
 ----------
 Warm Cache: True
-~297–2749M float32 elems/sec (extend + calculation)
-1.19–11.00 GB/s effective throughput
-----------
-Warm Cache: True
-~316–2157M float64 elems/sec (extend + calculation)
-2.53–17.26 GB/s effective throughput
+~528–3328M float64 elems/sec (extend + calculation)
+4.228–26.63 GB/s effective throughput
 ----------
 ----------
 IntegratedGatedBuffer :
 Warm Cache: False
-~34–503M float32 elems/sec (extend + calculation)
-0.13–2.01 GB/s effective throughput
+~46–711M float32 elems/sec (extend + calculation)
+0.1841–2.844 GB/s effective throughput
+----------
+Warm Cache: True
+~48–732M float32 elems/sec (extend + calculation)
+0.1916–2.927 GB/s effective throughput
 ----------
 Warm Cache: False
-~15–255M float64 elems/sec (extend + calculation)
-0.12–2.04 GB/s effective throughput
+~28–382M float64 elems/sec (extend + calculation)
+0.2251–3.058 GB/s effective throughput
 ----------
 Warm Cache: True
-~33–516M float32 elems/sec (extend + calculation)
-0.13–2.06 GB/s effective throughput
+~29–401M float64 elems/sec (extend + calculation)
+0.2289–3.206 GB/s effective throughput
+----------
+```
+
+**System B:**
+
+```text
+----------
+RunningMeanSqBuffer :
+Warm Cache: False
+~800–5384M float32 elems/sec (extend + calculation)
+3.199–21.54 GB/s effective throughput
 ----------
 Warm Cache: True
-~14–265M float64 elems/sec (extend + calculation)
-0.11–2.12 GB/s effective throughput
+~842–5901M float32 elems/sec (extend + calculation)
+3.367–23.6 GB/s effective throughput
+----------
+Warm Cache: False
+~148–1869M float64 elems/sec (extend + calculation)
+1.185–14.95 GB/s effective throughput
+----------
+Warm Cache: True
+~147–2229M float64 elems/sec (extend + calculation)
+1.177–17.83 GB/s effective throughput
+----------
+----------
+RunningMeanBuffer :
+Warm Cache: False
+~331–2656M float32 elems/sec (extend + calculation)
+1.323–10.62 GB/s effective throughput
+----------
+Warm Cache: True
+~343–2810M float32 elems/sec (extend + calculation)
+1.371–11.24 GB/s effective throughput
+----------
+Warm Cache: False
+~295–1898M float64 elems/sec (extend + calculation)
+2.358–15.18 GB/s effective throughput
+----------
+Warm Cache: True
+~313–2147M float64 elems/sec (extend + calculation)
+2.507–17.17 GB/s effective throughput
+----------
+----------
+IntegratedGatedBuffer :
+Warm Cache: False
+~34–534M float32 elems/sec (extend + calculation)
+0.1349–2.137 GB/s effective throughput
+----------
+Warm Cache: True
+~36–543M float32 elems/sec (extend + calculation)
+0.1431–2.171 GB/s effective throughput
+----------
+Warm Cache: False
+~17–256M float64 elems/sec (extend + calculation)
+0.1369–2.05 GB/s effective throughput
+----------
+Warm Cache: True
+~19–264M float64 elems/sec (extend + calculation)
+0.1524–2.115 GB/s effective throughput
 ----------
 ```
 
@@ -309,15 +464,17 @@ Warm Cache: True
     )
 ```
 
-#### float64
+#### System B
 
-##### block size
+##### float64
+
+###### block size
 
 ![df_64_BLOCK_SIZE.png](../perf/relative_benchmarks/eda/plots/bench_raw_buf/df_64_BLOCK_SIZE.png "fp64 block size relative graph")
 
-#### float32
+##### float32
 
-##### block size
+###### block size
 
 ![df_32_BLOCK_SIZE.png](../perf/relative_benchmarks/eda/plots/bench_raw_buf/df_32_BLOCK_SIZE.png "fp32 block size relative graph")
 
@@ -369,6 +526,8 @@ Warm Cache: True
 
 #### RunningMeanSqBuffer
 
+**System B:**
+
 ##### float64
 
 ###### block size
@@ -398,6 +557,8 @@ Warm Cache: True
 ![df_32_mean_sq_CALC_EVERY.png](../perf/relative_benchmarks/eda/plots/bench_op_f/df_32_mean_sq_CALC_EVERY.png)
 
 #### RunningMeanBuffer
+
+**System B:**
 
 ##### float64
 
@@ -435,9 +596,9 @@ Warm Cache: True
 | :---------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **High-Throughput Ingestion** | `OverwriteCircBuffer`   | Minimum-overhead implementation using raw pointer arithmetic; optimized for single-threaded write-heavy workloads.                                 |
 | **Producer-Consumer Sync**    | `BlockingCircBuffer`    | Implements thread-safe synchronization primitives and strict FIFO ordering for multi-threaded environments without manual locking/ticketing logic. |
-| **Windowed Statistics**       | `RunningMeanBuffer`     | Maintains an internal $\sum x$ accumulator to provide **O(1) mean** calculation, decoupling latency from window size.                              |
-| **Power/Energy Analysis**     | `RunningMeanSqBuffer`   | Maintains an internal $\sum x^2$ accumulator for **O(1) mean-square** updates, ideal for real-time RMS calculations.                               |
-| **Non-Linear Analytics**      | `IntegratedGatedBuffer` | Specialized implementation for gated accumulation, minimizing branching overhead in integrated loudness pipelines.                                 |
+| **Windowed Statistics**       | `RunningMeanBuffer`     | Maintains an internal $\sum x$ accumulator to provide **$O(1)$ mean** calculation, decoupling latency from window size.                            |
+| **Power/Energy Analysis**     | `RunningMeanSqBuffer`   | Maintains an internal $\sum x^2$ accumulator for **$O(1)$ mean-square** updates, ideal for real-time RMS calculations.                             |
+| **Non-Linear Analytics**      | `IntegratedGatedBuffer` | Specialized implementation for gated accumulation in integrated loudness pipelines.                                                                |
 
 ### Performance Tips
 
@@ -490,44 +651,43 @@ for epoch in range(100):
 
 ## Conclusion
 
-Standard Python containers like `collections.deque` are optimized for general-purpose use, but they don't perform as desired under the demands of high-throughput numerical workloads. The data above confirms that NumCircBuf effectively solves this problem.
+Standard Python containers (e.g. `collections.deque`, `list`) are designed for general-purpose use with an emphasis on versatility; they don't perform as desired under the demands of high-throughput numerical workloads. The data above confirms that NumCircBuf effectively solves this problem.
 
 ### Technical Summary
 
-- **Hardware-Adaptive SIMD Strategy:** The library utilizes NumPy’s internal runtime dispatch mechanism (Universal Intrinsics) to execute mathematical operations. By delegating execution to NumPy internals, NumCircBuf ensures that the most efficient SIMD kernels (such as AVX-512, AVX2, or NEON) are selected dynamically based on the host CPU. In addition, raw memory movement operations benefit from platform-optimized `memcpy` routines provided by the system C runtime, which utilize architecture-specific vectorized code paths. This combined approach provides a significant performance advantage over static Cython/C implementations, which often lack the cross-architecture portability and sophisticated runtime probing required to saturate modern CPU pipelines.
-- **Memory & Workspace Strategy:** The library utilizes a pre-allocated contiguous memory architecture for primary storage to prevent heap fragmentation. For some specific math operations, the implementations utilize temporary copies. This trade-off allows the library to perform mathematical operations at a higher throughput.
-- **Algorithmic Complexity:** Rolling statistical metrics (mean, mean-square) are implemented via **O(1) recurrence relations**. By maintaining internal accumulators, the computational cost of windowed analytics is decoupled from the buffer size, ensuring fixed-time execution even with extremely large window depths.
-- **Numerical Integrity & Precision:** Precision is enforced through type-strict execution paths. fp32 buffers perform explicit single-precision arithmetic to ensure bit-level determinism. The library implements a specialized handling policy for **IEEE 754 non-finite values (inf, nan)** that prioritizes data transparency over silent error correction. While the implementation performs a single-pass resynchronization of the accumulator to correct for numerical drift, it does not engage in persistent suppression of non-finite values. This ensures that if the input stream is corrupted, the internal state faithfully reflects that corruption rather than masking it through silent removal.
+- **Hardware-Adaptive SIMD:** Vectorized mathematical computations leverage NumPy’s runtime dispatch. Delegating execution dynamically selects the most efficient SIMD kernels (AVX-512, AVX2, NEON, etc.) depending on the host CPU. In addition, raw memory movement benefit from architecture-specific vectorized code paths using `memcpy` routines provided by the system C runtime. This architecture provides a performance advantage over static Cython/C implementations.
+- **Memory & Workspace:** Primary storage uses pre-allocated contiguous memory which prevents heap fragmentation. Some math operations, require temporary copies; this trade-off allows the library to maximize computational throughput.
+- **Algorithmic Complexity:** Rolling statistical metrics (mean, mean-square) are implemented via **O(1) recurrence relations**. Computational cost of windowed analytics is decoupled from the buffer size by maintaining internal accumulators, ensuring fixed-time execution even with extremely large window depths.
+- **Numerical Integrity:** Precision is enforced through type-specific execution paths. FP32 buffers perform explicit single-precision arithmetic to ensure bit-level determinism. A specialized handling policy for **IEEE 754 non-finite values (inf, nan)** is implemented, that prioritizes data transparency over silent error correction. Though the implementation performs a single-pass resynchronization of the accumulator to correct for numerical drift, it does not engage in persistent suppression of non-finite values. This ensures that if the input stream is corrupted, the internal state faithfully reflects that corruption rather than masking it through silent removal.
 
 ### Performance Comparison
 
-NumCircBuf is designed to saturate the hardware bandwidth, providing a massive performance leap over standard Python containers:
+Compared to standard Python containers, NumCircBuf offers a noticeable performance increase by saturating single-threaded hardware bandwidth:
 
-- **vs. `collections.deque` & Python lists**: **1000–1600× faster** for bulk `extend` and **2–4× faster** for single `append`.
-- **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**, reaching speeds where performance is limited primarily by hardware bandwidth.
+- **vs. `collections.deque` & Python lists**: **500–1500× faster** for bulk `extend`, and **1.5–3× faster** for single `append`.
+- **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**.
 
 ### When to Use NumCircBuf
 
-**✅ Ideal for:**
+**Ideal for:**
 
 - High-frequency data ingestion (e.g., telemetry, sensors).
-- Real-time digital signal processing (DSP) and audio analysis.
+- Real-time digital signal processing (DSP).
 - Latency-sensitive workloads requiring O(1) statistical updates.
-- Scenarios requiring strict memory stability and zero-allocation loops.
 
-**❌ Consider alternatives for:**
+**Consider alternatives for:**
 
-- Applications requiring dynamic resizing of buffers during runtime.
+- Applications requiring dynamic resizing of buffers.
 - Storage of non-numeric or heterogeneous Python objects.
-- Simple use cases where the overhead of the Python interpreter is not a bottleneck.
+- Simple use cases where the buffers are not a bottleneck.
 
 > Performance figures were obtained on representative workloads using the benchmark code above.
-> Actual performance may vary depending on hardware, data layout, and workload characteristics.
+> Results can vary depending on hardware, data layout, and workload characteristics.
 
-## Benchmarking Your Application
+## Running Benchmarks
 
 You can benchmark NumCircBuf for your specific use case using utilities from the `numcircbuf.bench_utils` sub-module.
-Alternatively, you can run the example benchmark scripts provided in the GitHub repository.
+Benchmark examples discussed in this document are also included in the GitHub repository for quick testing and comparision.
 
 ## Additional Resources
 
