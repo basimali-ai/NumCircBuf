@@ -58,9 +58,9 @@ def _run_benchmark(
         f"\nWarm Cache: {warm_cache}\n"
         f"Read Into Array Used: {read_into_arr is not None}\n"
         "BlockingCircBuffer Write throughput: "
-        f"{(block_size * ELEM_BYTES) / time_ns[0]:.2f} GB/s\n"
+        f"{(block_size * ELEM_BYTES) / time_ns[0]:.4g} GB/s\n"
         "BlockingCircBuffer Read throughput: "
-        f"{(block_size * ELEM_BYTES) / time_ns[1]:.2f} GB/s"
+        f"{(block_size * ELEM_BYTES) / time_ns[1]:.4g} GB/s"
     )
 
 

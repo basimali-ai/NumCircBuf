@@ -81,7 +81,7 @@ def _run_benchmark(
     print(f"\nWarm Cache: {warm_cache}")
     for name, time_ns in results_ns.items():
         throughput_gb_s = (block_size * ELEM_BYTES) / time_ns
-        print(f"{name} throughput: {throughput_gb_s:.2f} GB/s")
+        print(f"{name} throughput: {throughput_gb_s:.4g} GB/s")
 
 
 def main(

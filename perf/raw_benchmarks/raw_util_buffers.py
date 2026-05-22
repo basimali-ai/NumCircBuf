@@ -137,7 +137,7 @@ def print_summary(warm_cache, dtype, processing_rates, throughputs):
         f"~{(min(processing_rates) / 1_000_000):.0f}–"
         f"{(max(processing_rates) / 1_000_000):.0f}M "
         f"{dtype.__name__} elems/sec (extend + calculation)\n"
-        f"{min(throughputs):_.2f}–{max(throughputs):_.2f} "
+        f"{min(throughputs):_.4g}–{max(throughputs):_.4g} "
         "GB/s effective throughput"
     )
     print_separator()
@@ -202,8 +202,8 @@ def main(
     for buffer_name in all_buffer_names:
         print_separator()
         print(f"{buffer_name} :")
-        for warm_cache in (False, True):
-            for dtype in DTYPES:
+        for dtype in DTYPES:
+            for warm_cache in (False, True):
                 key = (dtype, warm_cache)
                 proc = results[buffer_name].get(key, {}).get("processing", [])
                 thru = results[buffer_name].get(key, {}).get("throughput", [])
