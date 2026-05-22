@@ -686,7 +686,7 @@ For detailed performance benchmarks, see the [PERFORMANCE.md](https://github.com
 
 - **Throughput** (extending 64 KiB of data to `OverwriteCircBuffer`):
   - **Cold cache (data)**:
-    - AMD R7700x (DDR5): **~50 GB/s**
+    - AMD R7700x (DDR5): **~35 GB/s**
     - AMD R5600 (DDR4): **~30 GB/s**
 
   - **Warm cache (data)**:
