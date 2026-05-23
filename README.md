@@ -33,7 +33,7 @@
 
 ## Overview
 
-NumCircBuf is a high-performance Python library providing numerical circular buffers, including O(1) accumulators and specialized calculation variants.
+NumCircBuf is a high-performance Python library providing numerical circular buffers, featuring O(1) accumulators and specialized calculation variants, designed for high-throughput ingestion.
 Built with Cython for a balance between performance and maintainability, it provides efficient data structures for real-time signal processing, time-series analysis, and other performance-critical applications.
 
 ## Features
