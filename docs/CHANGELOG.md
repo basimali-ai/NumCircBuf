@@ -49,3 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **README:** Refine `Features` section.
 - **bench_utils.get_cpu_name:** Retrieves a more human-readable CPU name.
+
+## [1.1.1] - 2026-05-23
+
+### Fixed
+
+- **README**: Correct DDR5 cold-cache throughput.
+
+### Changed
+
+- **README:** Refine library overview, and update relative performance multipliers.
