@@ -46,8 +46,8 @@ Built with Cython for a balance between performance and maintainability, it prov
     - **RunningMeanBuffer** – O(1) mean
     - **RunningMeanSqBuffer** – O(1) mean-square
 - **High Performance** – Bypasses Python/NumPy overhead to saturate the hardware bandwidth. Details in [PERFORMANCE.md](https://github.com/basimali-ai/NumCircBuf/blob/main/docs/PERFORMANCE.md):
-  - **vs. `collections.deque` & Python lists**: **1000–1600× faster** for bulk `extend` and **2–4× faster** for single `append`.
-  - **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**, reaching speeds where performance is limited primarily by hardware bandwidth.
+  - **vs. `collections.deque` & Python lists**: **500–1500× faster** for bulk `extend`, and **1.5–3× faster** for single `append`.
+  - **vs. Optimized NumPy Ring Buffers**: **Up to 10× faster**.
 - **Familiar API:** Buffers use `append`, `extend`, and `clear` methods for drop-in compatibility.
 - **NumPy Integration:** Direct integration with NumPy arrays.
 - **Type Safety:** Fully typed; supports fp32, fp64, int32, int64, uint32, and uint64.
