@@ -33,15 +33,15 @@
 
 ## Overview
 
-NumCircBuf is a high-performance Python library providing numerical circular buffers, featuring O(1) accumulators and specialized calculation variants, designed for high-throughput ingestion.
-Built with Cython for a balance between performance and maintainability, it provides efficient data structures for real-time signal processing, time-series analysis, and other performance-critical applications.
+NumCircBuf is a high-performance Python library providing numerical circular buffers, featuring O(1) accumulators and specialized calculation variants.
+Built with Cython for a balance between speed and maintainability, it provides efficient data structures for real-time signal processing, time-series analysis, and other performance-critical applications.
 
 ## Features
 
 - **Multiple Buffer Types** – Specialized implementations for different use cases:
   - **BlockingCircBuffer** – Blocking producer/consumer circular buffer for multi-threaded applications.
   - **OverwriteCircBuffer** – Optimized for high-throughput writes
-  - **IntegratedGatedBuffer** – Specifically for calculating gated loudness/energy statistics
+  - **IntegratedGatedBuffer** – Specifically for calculating gated loudness statistics
   - **O(1) Accumulators** – Constant-time operations for statistics, implemented in specialized buffers:
     - **RunningMeanBuffer** – O(1) mean
     - **RunningMeanSqBuffer** – O(1) mean-square
@@ -51,7 +51,7 @@ Built with Cython for a balance between performance and maintainability, it prov
 - **Familiar API:** Buffers use `append`, `extend`, and `clear` methods for drop-in compatibility.
 - **NumPy Integration:** Direct integration with NumPy arrays.
 - **Type Safety:** Fully typed; supports fp32, fp64, int32, int64, uint32, and uint64.
-- **Docs & Performance:** Includes extensive API documentation, usage examples, and detailed performance benchmarks across all buffer types.
+- **Docs & Benchmarks:** Includes extensive API documentation, usage examples, and detailed performance benchmarks.
 
 ## Installation
 
