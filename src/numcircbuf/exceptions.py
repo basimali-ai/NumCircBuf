@@ -144,9 +144,7 @@ class BufferCapacityTypeError(BufferCapacityError, NumCircBufTypeError):
         self.valid_types = (int,)
         super().__init__(
             class_obj=class_obj,
-            message=(
-                f"\n{class_obj.__name__}:\n{message}\nGot: {received_type}"
-            ),
+            message=(f"\n{class_obj.__name__}:\n{message}\nGot: {received_type}"),
         )
 
 
@@ -172,18 +170,14 @@ class BufferCapacityValueError(BufferCapacityError, NumCircBufValueError):
             message = message or "Buffer capacity/maxlen too large."
             error_str += f"{message}\nMax: {max_maxlen:_}\n"
         else:
-            message = (
-                message or "Buffer capacity/maxlen must be greater than 0."
-            )
+            message = message or "Buffer capacity/maxlen must be greater than 0."
             error_str += f"{message}\n"
 
         error_str += f"Got: {received_value:_}"
         super().__init__(class_obj=class_obj, message=error_str)
 
 
-class DataTypeError(
-    NumCircBufInitError, NumCircBufValueError, NumCircBufTypeError
-):
+class DataTypeError(NumCircBufInitError, NumCircBufValueError, NumCircBufTypeError):
     """Exception raised for unsupported data types."""
 
     def __init__(
@@ -320,15 +314,12 @@ class DataSizeWarning(NumCircBufRuntimeWarning):
             class_obj=obj.__class__,
             obj=obj,
             message=(
-                f"{obj}: {message} "
-                f"Data size: {data_size:_}, Buffer maxlen: {maxlen:_}"
+                f"{obj}: {message} Data size: {data_size:_}, Buffer maxlen: {maxlen:_}"
             ),
         )
 
 
-class NumCircBufDeprecationWarning(
-    _NumCircBufDeprecationBase, DeprecationWarning
-):
+class NumCircBufDeprecationWarning(_NumCircBufDeprecationBase, DeprecationWarning):
     """Light Warning for deprecated features."""
 
 

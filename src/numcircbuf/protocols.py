@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable, Any, Iterator
 import numpy as np
 
 if TYPE_CHECKING:
-    from .exceptions import NumCircBufIndexError, InvalidModification
+    from .exceptions import NumCircBufIndexError, InvalidModification  # noqa: F401
 
 
 @runtime_checkable
@@ -143,9 +143,7 @@ class ReadWriteBenchmarkBufferProtocol(Protocol):
         :type out_array_np: np.ndarray
         """
 
-    def write_extend_unchecked(
-        self, block_np: np.ndarray, **kwargs: Any
-    ) -> None:
+    def write_extend_unchecked(self, block_np: np.ndarray, **kwargs: Any) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.

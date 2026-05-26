@@ -99,9 +99,7 @@ def _get_cache_line_size_windows() -> int | None:
     if byte_count == 0:
         return None
     raw = (ctypes.c_byte * byte_count)()
-    ptr = ctypes.cast(
-        raw, ctypes.POINTER(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)
-    )
+    ptr = ctypes.cast(raw, ctypes.POINTER(SYSTEM_LOGICAL_PROCESSOR_INFORMATION))
 
     res = GetLogicalProcessorInformation(ptr, ctypes.byref(buf_size))
     if res == 0:
@@ -151,10 +149,7 @@ def _get_cache_line_size_darwin() -> int | None:
     name = b"hw.cachelinesize"
     val = ctypes.c_uint64()
     size = ctypes.c_size_t(ctypes.sizeof(val))
-    if (
-        libc.sysctlbyname(name, ctypes.byref(val), ctypes.byref(size), None, 0)
-        == 0
-    ):
+    if libc.sysctlbyname(name, ctypes.byref(val), ctypes.byref(size), None, 0) == 0:
         return val.value
 
     return None
@@ -173,9 +168,7 @@ def _get_cache_line_size() -> int | None:
             return _get_cache_line_size_darwin()
 
     except Exception:
-        logger.exception(
-            "Exception occured while trying to determine Cache Line size."
-        )
+        logger.exception("Exception occured while trying to determine Cache Line size.")
 
     return None
 
@@ -227,9 +220,7 @@ def _get_l3_win32() -> int | None:
         ]
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    GetLogicalProcessorInformationEx = (
-        kernel32.GetLogicalProcessorInformationEx
-    )
+    GetLogicalProcessorInformationEx = kernel32.GetLogicalProcessorInformationEx
     GetLogicalProcessorInformationEx.argtypes = [
         ctypes.c_int,
         ctypes.POINTER(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX),
@@ -238,15 +229,11 @@ def _get_l3_win32() -> int | None:
     GetLogicalProcessorInformationEx.restype = wintypes.BOOL
 
     buffer_size = ctypes.c_uint(0)
-    GetLogicalProcessorInformationEx(
-        RelationCache, None, ctypes.byref(buffer_size)
-    )
+    GetLogicalProcessorInformationEx(RelationCache, None, ctypes.byref(buffer_size))
     buf = (ctypes.c_byte * buffer_size.value)()
     res = GetLogicalProcessorInformationEx(
         RelationCache,
-        ctypes.cast(
-            buf, ctypes.POINTER(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)
-        ),
+        ctypes.cast(buf, ctypes.POINTER(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)),
         ctypes.byref(buffer_size),
     )
     if not res:
@@ -293,12 +280,7 @@ def _get_l3_darwin() -> int | None:
         val = ctypes.c_uint64()
         size = ctypes.c_size_t(ctypes.sizeof(val))
 
-        if (
-            libc.sysctlbyname(
-                name, ctypes.byref(val), ctypes.byref(size), None, 0
-            )
-            == 0
-        ):
+        if libc.sysctlbyname(name, ctypes.byref(val), ctypes.byref(size), None, 0) == 0:
             return val.value
 
     return None
@@ -317,9 +299,7 @@ def _get_l3_cache() -> int | None:
             return _get_l3_darwin()
 
     except Exception:
-        logger.exception(
-            "Exception occured while trying to determine CPU L3 Cache."
-        )
+        logger.exception("Exception occured while trying to determine CPU L3 Cache.")
 
     return None
 
@@ -440,8 +420,6 @@ def get_available_ram() -> int | None:
                 return res
 
     except Exception:
-        logger.exception(
-            "Exception occured while trying to get available RAM."
-        )
+        logger.exception("Exception occured while trying to get available RAM.")
 
     return None
