@@ -59,3 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **README:** Refine library overview, and update relative performance multipliers.
+
+## [1.1.2] - 2026-05-26
+
+### Fixed
+
+- Normalize Linux L3 cache size to bytes.
+
+### Changed
+
+- **README:** Refine library overview and `Features` section.

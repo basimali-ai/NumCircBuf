@@ -152,7 +152,7 @@ else:
 
 setup(
     name="NumCircBuf",
-    version="1.1.1",
+    version="1.1.2",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
