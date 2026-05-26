@@ -1321,6 +1321,46 @@ def test_l3_returns_none_when_no_l3_exists_win32(mocker):
     assert system_info._get_l3_win32() is None
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only test")
+def test_get_l3_win32(mocker):
+    l3_size = 16 * 1024**2
+
+    mock_dll = mocker.patch("ctypes.WinDLL")
+    mock_api = mock_dll.return_value.GetLogicalProcessorInformationEx
+
+    def side_effect(rel, ptr, size_ref):
+        if size_ref:
+            if hasattr(size_ref, "_obj"):
+                size_ref._obj.value = 64
+            else:
+                size_ref.contents.value = 64
+        return True
+
+    mock_api.side_effect = side_effect
+
+    mock_info_l2 = mocker.MagicMock()
+    mock_info_l2.Relationship = 2
+    mock_info_l2.Size = 32
+    mock_info_l2.u.Cache.Level = 2
+
+    mock_info_l3 = mocker.MagicMock()
+    mock_info_l3.Relationship = 2
+    mock_info_l3.Size = 32
+    mock_info_l3.u.Cache.Level = 3
+    mock_info_l3.u.Cache.Size = l3_size
+
+    mock_cast_api = mocker.MagicMock()
+
+    mock_cast_l2 = mocker.MagicMock()
+    mock_cast_l2.contents = mock_info_l2
+
+    mock_cast_l3 = mocker.MagicMock()
+    mock_cast_l3.contents = mock_info_l3
+
+    mocker.patch("ctypes.cast", side_effect=[mock_cast_api, mock_cast_l2, mock_cast_l3])
+    assert system_info._get_l3_win32() == l3_size
+
+
 def test_get_cache_line_size_darwin(mocker):
     mock_cdll = mocker.patch("ctypes.CDLL")
     mock_libc = mock_cdll.return_value
