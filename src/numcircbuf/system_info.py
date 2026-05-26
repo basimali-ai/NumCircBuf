@@ -277,9 +277,9 @@ def _get_l3_linux() -> int | None:
             with open(os.path.join(idx, "size")) as f:
                 s = f.read().strip()
             if s.endswith("K"):
-                return int(s[:-1])
+                return int(s[:-1]) * 1024
             if s.endswith("M"):
-                return int(s[:-1])
+                return int(s[:-1]) * 1024**2
             return int(s)
         except Exception:  # pragma: no cover
             continue
