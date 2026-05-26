@@ -69,7 +69,7 @@ def time_func(func):
     return delta, res
 
 
-def _helper(func):
+def _helper_test_cache(func):
     times_cache_hit = []
     times_no_hit = []
     results = []
@@ -94,11 +94,11 @@ def test_page_size():
 
 
 def test_get_cache_line_size():
-    _helper(system_info.get_cache_line_size)
+    _helper_test_cache(system_info.get_cache_line_size)
 
 
-def test_get_cpu_l3_cache_mib():
-    _helper(system_info.get_cpu_l3_cache)
+def test_get_cpu_l3_cache():
+    _helper_test_cache(system_info.get_cpu_l3_cache)
 
 
 def test_get_available_ram():
@@ -707,7 +707,7 @@ def test_get_cache_line_size_edge_cases(mocker, platform_name, target_func):
         ("unknown", None),
     ),
 )
-def test_get_cpu_l3_cache_mib_edge_cases(mocker, platform_name, target_func):
+def test_get_cpu_l3_cache_edge_cases(mocker, platform_name, target_func):
     _helper_mocker_edge_cases(
         mocker=mocker,
         platform_name=platform_name,
@@ -1313,8 +1313,8 @@ def test_l3_returns_none_when_no_l3_exists_win32(mocker):
 
     mock_info = mocker.MagicMock()
     mock_info.Relationship = 2
-    mock_info.u.Cache.Level = 2
     mock_info.Size = 32
+    mock_info.u.Cache.Level = 2
 
     mocker.patch("ctypes.cast").return_value.contents = mock_info
 
