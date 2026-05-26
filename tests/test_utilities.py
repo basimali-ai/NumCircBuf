@@ -1148,25 +1148,7 @@ def test_get_cache_line_linux_returns_none_if_no_files_exist(mocker):
     assert system_info._get_cache_line_size_linux() is None
 
 
-def test_get_l3_linux_m_suffix(mocker):
-    mocker.patch("os.path.isdir", return_value=True)
-
-    fake_index_path = "/sys/devices/system/cpu/cpu0/cache/index3"
-    mocker.patch("glob.glob", return_value=[fake_index_path])
-
-    def side_effect(path, mode="r"):
-        if "level" in path:
-            return StringIO("3")
-        if "size" in path:
-            return StringIO("16M")
-        return StringIO("")
-
-    mocker.patch("builtins.open", side_effect=side_effect)
-
-    assert system_info._get_l3_linux() == 16
-
-
-def test_get_l3_linux_raw_bytes(mocker):
+def test_get_l3_linux(mocker):
     mocker.patch("os.path.isdir", return_value=True)
     mocker.patch(
         "glob.glob", return_value=["/sys/devices/system/cpu/cpu0/cache/index3"]
@@ -1176,11 +1158,30 @@ def test_get_l3_linux_raw_bytes(mocker):
         if "level" in path:
             return StringIO("3")
         if "size" in path:
+            return StringIO("8192K")
+        return StringIO("")
+
+    mocker.patch("builtins.open", side_effect=side_effect)
+    assert system_info._get_l3_linux() == 8192 * 1024
+
+    def side_effect(path, mode="r"):
+        if "level" in path:
+            return StringIO("3")
+        if "size" in path:
+            return StringIO("16M")
+        return StringIO("")
+
+    mocker.patch("builtins.open", side_effect=side_effect)
+    assert system_info._get_l3_linux() == 16 * 1024**2
+
+    def side_effect(path, mode="r"):
+        if "level" in path:
+            return StringIO("3")
+        if "size" in path:
             return StringIO("33554432")
         return StringIO("")
 
     mocker.patch("builtins.open", side_effect=side_effect)
-
     assert system_info._get_l3_linux() == 33554432
 
 
