@@ -14,7 +14,7 @@ jobs:
     environment: pypi
     steps:
       - name: Download artifacts from build workflow
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v21
         with:
           workflow: build_wheels.yml
           branch: main
