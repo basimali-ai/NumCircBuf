@@ -23,7 +23,8 @@ src/numcircbuf/_test_cython_api.pyx
 
 # Debugging Files
 **/core.html
-**/core.asm
+**/_test_cython_api.html
+*.asm
 
 # IDE / OS / Checkers
 .vscode/
