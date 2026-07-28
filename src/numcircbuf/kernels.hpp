@@ -51,6 +51,10 @@ namespace ncb {
         return (a > b) ? a : b;
     }
 
+    FORCE_INLINE constexpr size_t min_sz(size_t a, size_t b) {
+        return (a < b) ? a : b;
+    }
+
     FORCE_INLINE size_t get_start_pos(
         size_t write_head, size_t size, size_t maxlen
     ){

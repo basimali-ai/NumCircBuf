@@ -102,6 +102,7 @@ cdef extern from "kernels.hpp" namespace "ncb" nogil:
     double unchecked_max(double a, double b) noexcept
     float unchecked_max(float a, float b) noexcept
 
+    size_t min_sz(size_t a, size_t b) noexcept
     size_t get_start_pos(size_t write_head, size_t size, size_t maxlen) noexcept
 
 cdef extern from "kernels.hpp" namespace "ncb::append" nogil:
@@ -220,10 +221,6 @@ cdef object SUPPORTED_DTYPES_ALL_TUPLE = SUPPORTED_DTYPES_FP_TUPLE + (
     {{SupportedDtype.U64.value}},
     {{SupportedDtype.U32.value}},
 )
-
-
-cdef inline size_t min_sz(size_t a, size_t b) noexcept nogil:
-    return a if a < b else b
 
 
 cdef str _format_index(object idx):
