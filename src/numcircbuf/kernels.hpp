@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstring>
+#include <cstdint>
 
 #if defined(_MSC_VER)
     #define FORCE_INLINE static __forceinline
@@ -9,7 +10,41 @@
     #define FORCE_INLINE static inline
 #endif
 
+#if defined(_MSVC_LANG) && _MSVC_LANG >= 202002L
+    #include <bit>
+    #define NCB_HAS_BIT_CAST 1
+#elif defined(__cplusplus) && __cplusplus >= 202002L && defined(__has_include)
+    #if __has_include(<bit>)
+        #include <bit>
+        #define NCB_HAS_BIT_CAST 1
+    #endif
+#endif
+
+#ifndef NCB_HAS_BIT_CAST
+    #define NCB_HAS_BIT_CAST 0
+#endif
+
 namespace ncb {
+
+    FORCE_INLINE int fast_isfinite(double a) {
+    #if NCB_HAS_BIT_CAST
+        uint64_t bits = std::bit_cast<uint64_t>(a);
+    #else
+        uint64_t bits;
+        std::memcpy(&bits, &a, sizeof(double));
+    #endif
+        return (bits & 0x7FFFFFFFFFFFFFFFULL) < 0x7FF0000000000000ULL;
+    }
+
+    FORCE_INLINE int fast_isfinite(float a) {
+    #if NCB_HAS_BIT_CAST
+        uint32_t bits = std::bit_cast<uint32_t>(a);
+    #else
+        uint32_t bits;
+        std::memcpy(&bits, &a, sizeof(float));
+    #endif
+        return (bits & 0x7FFFFFFF) < 0x7F800000;
+    }
 
     template <typename T>
     FORCE_INLINE constexpr T unchecked_max(T a, T b) {

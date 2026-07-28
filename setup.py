@@ -85,22 +85,26 @@ def process_tempita(file_path: Path) -> Path:
     return out_file
 
 
+extra_compile_args: list[str] = []
 extra_link_args: list[str] = []
-if sys.platform == "win32":  # MSVC optimization
-    if debug_build or coverage_build:  # No optimization, debug_build symbols
-        extra_compile_args = ["/Od", "/Z7"]
+
+if sys.platform == "win32":  # MSVC
+    extra_compile_args.append("/std:c++20")
+
+    if debug_build or coverage_build:
+        extra_compile_args.extend(["/Od", "/Z7"])
     else:
-        extra_compile_args = ["/O2"]
+        extra_compile_args.append("/O2")
 
     if save_asm:
         extra_compile_args.append("/FAs")
 
-else:  # GCC/Clang optimization
+else:  # GCC/Clang
     if debug_build or coverage_build:
-        extra_compile_args = ["-O0", "-g"]
-        extra_link_args = ["-g"]
+        extra_compile_args.extend(["-O0", "-g"])
+        extra_link_args.append("-g")
     else:
-        extra_compile_args = ["-O3"]
+        extra_compile_args.append("-O3")
 
     if save_asm:
         extra_compile_args.extend(["-save-temps", "-fverbose-asm"])
@@ -114,7 +118,7 @@ define_macros: list[tuple[str, str]] = []
 if coverage_build:
     define_macros.extend([("CYTHON_TRACE", "1"), ("CYTHON_TRACE_NOGIL", "1")])
 
-extensions = []
+extensions: list[Extension] = []
 exclude_pkg_data = ["core.cpp", "_test_cython_api.cpp"]
 
 if not only_test_api:
