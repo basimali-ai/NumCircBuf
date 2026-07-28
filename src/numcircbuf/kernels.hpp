@@ -9,18 +9,21 @@
     #define FORCE_INLINE static inline
 #endif
 
-namespace ncb{
+namespace ncb {
+
+    FORCE_INLINE size_t get_start_pos(
+        size_t write_head, size_t size, size_t maxlen
+    ){
+        return (write_head >= size)
+              ? write_head - size
+              : write_head + maxlen - size;
+    }
 
     namespace append {
 
-        FORCE_INLINE size_t append_advance_head(
-            size_t head, size_t maxlen
-        ){
+        FORCE_INLINE size_t append_advance_head(size_t head, size_t maxlen) {
             head++;
-            if (head >= maxlen) {
-                head = 0;
-            }
-            return head;
+            return (head >= maxlen) ? 0 : head;
         }
 
         template <typename T>
@@ -38,7 +41,6 @@ namespace ncb{
             }
 
             buf_ptr[write_head] = value;
-
             *write_head_ptr = append_advance_head(write_head, maxlen);
 
             return 0;
@@ -66,7 +68,6 @@ namespace ncb{
             }
 
             buf_ptr[write_head] = value;
-
             *write_head_ptr = append_advance_head(write_head, maxlen);
 
             return overwritten;
@@ -100,12 +101,10 @@ namespace ncb{
             }
 
             buf_ptr[write_head] = value;
-
             *write_head_ptr = append_advance_head(write_head, maxlen);
 
             return overwritten;
         }
-        
     }
 
     namespace extend {
@@ -114,10 +113,7 @@ namespace ncb{
             size_t head, size_t maxlen, size_t n
         ){
             head += n;
-            if (head >= maxlen) {
-                head -= maxlen;
-            }
-            return head;
+            return (head >= maxlen) ? head - maxlen : head;
         }
 
         FORCE_INLINE void write_data(
@@ -189,10 +185,7 @@ namespace ncb{
             size_t      n,
             size_t      elem_size
         ){
-            const size_t start = (write_head >= size) 
-                                ? (write_head - size) 
-                                : (write_head + maxlen - size);
-
+            const size_t start = get_start_pos(write_head, size, maxlen);
             read_data(
                 dest_ptr,
                 buf_ptr,
@@ -202,6 +195,5 @@ namespace ncb{
                 elem_size
             );
         }
-
     }
 }

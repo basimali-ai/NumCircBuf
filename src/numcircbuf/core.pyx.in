@@ -98,6 +98,9 @@ cdef extern from "numpy/arrayobject.h":
 cdef extern from "<cstring>" namespace "std" nogil:
     void* memcpy(void* dest, const void* src, size_t n) noexcept
 
+cdef extern from "kernels.hpp" namespace "ncb" nogil:
+    size_t get_start_pos(size_t write_head, size_t size, size_t maxlen) noexcept
+
 cdef extern from "kernels.hpp" namespace "ncb::append" nogil:
     bint overwritten_never_append[T](
         T*      buf_ptr,
@@ -255,7 +258,7 @@ cdef str _iter_error_msg():
 cdef void _remove_{{target}}_{{suffix}}(
     _MainBufferProtocolBase self,
     {{c_type}}* ptr,
-    size_t read_pos
+    size_t read_pos,
 ) noexcept nogil:
     cdef:
         size_t write_pos
@@ -271,7 +274,7 @@ cdef void _remove_{{target}}_{{suffix}}(
     {{py: _func_call = 'isnan(val)' if target == ClearTargets.NANS.value else 'isinf(val)'}}
     for i in range(size):
         val = ptr[read_pos]
-        
+
         if not {{_func_call}}:
             if read_pos != write_pos:
                 ptr[write_pos] = val 
@@ -309,15 +312,6 @@ cdef bint arr_isfinite_{{suffix}}(
 # --------------------------------
 
 
-cdef inline size_t _get_start_pos(
-    size_t write_head, size_t size, size_t maxlen
-) noexcept nogil:
-    if write_head >= size:
-        return write_head - size
-    else:
-        return write_head + maxlen - size
-
-
 cdef class _MainBufferProtocolBase:
     pass
 
@@ -351,7 +345,7 @@ cdef class _InternalCircView:
             Py_ssize_t stop_val, p2_start, stop2
             Py_ssize_t maxlen = <Py_ssize_t> self._maxlen
             Py_ssize_t size = <Py_ssize_t> self._buffer_obj.size
-            Py_ssize_t start_pos = <Py_ssize_t> _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+            Py_ssize_t start_pos = <Py_ssize_t> get_start_pos(self._buffer_obj.write_head, size, maxlen)
 
         if isinstance(idx, slice):
             start, stop, step = idx.indices(size)
@@ -436,7 +430,7 @@ cdef class _InternalCircView:
             # --------------------------------
             size_t maxlen = self._maxlen
             size_t current_size = self._buffer_obj.size
-            size_t current_start_pos = _get_start_pos(self._buffer_obj.write_head, current_size, maxlen)
+            size_t current_start_pos = get_start_pos(self._buffer_obj.write_head, current_size, maxlen)
 
         if current_size == 0: return
 
@@ -479,7 +473,7 @@ cdef class _InternalCircView:
             size_t end
             size_t size = self._buffer_obj.size
             size_t maxlen = self._maxlen
-            size_t start_pos = _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+            size_t start_pos = get_start_pos(self._buffer_obj.write_head, size, maxlen)
 
         if size == 0:
             return self._empty_result
@@ -1078,7 +1072,7 @@ cdef class _OverwriteCircBufferBP(_MainBufferProtocolBase):
             return
 
         with nogil:
-            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            read_pos = get_start_pos(self.write_head, size, self._maxlen)
             # --- Generated c_dtype dispatch ---
             {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
             {{py: suffix, c_type, npy_const, _ = item}}
@@ -1141,7 +1135,7 @@ cdef class _OverwriteCircBufferBPInclMath(_OverwriteCircBufferBP):
 
 {{def shared_start_end_calculation()}}
         # >>> shared_start_end_calculation >>>
-        start = _get_start_pos(self.write_head, size, maxlen)
+        start = get_start_pos(self.write_head, size, maxlen)
         end = start + size
         # <<< shared_start_end_calculation <<<
 {{enddef}}
@@ -1736,7 +1730,7 @@ cdef class _UtilityBufferBP(_OverwriteCircBufferBPInclMath):
             return
 
         with nogil:
-            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            read_pos = get_start_pos(self.write_head, size, self._maxlen)
             # --- Generated c_dtype dispatch ---
             {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
             {{py: suffix, c_type, npy_const, _ = item}}
