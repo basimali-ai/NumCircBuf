@@ -1,0 +1,10 @@
+name: Show Assembly
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This is a dummy placeholder to register the workflow."
