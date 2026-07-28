@@ -11,6 +11,11 @@
 
 namespace ncb {
 
+    template <typename T>
+    FORCE_INLINE constexpr T unchecked_max(T a, T b) {
+        return (a > b) ? a : b;
+    }
+
     FORCE_INLINE size_t get_start_pos(
         size_t write_head, size_t size, size_t maxlen
     ){

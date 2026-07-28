@@ -62,8 +62,6 @@ from libc.math cimport (
     isnan,
     isinf,
     isfinite,
-    fmax,
-    fmaxf,
 )
 from libc.stdint cimport ( 
     uintptr_t,
@@ -99,6 +97,9 @@ cdef extern from "<cstring>" namespace "std" nogil:
     void* memcpy(void* dest, const void* src, size_t n) noexcept
 
 cdef extern from "kernels.hpp" namespace "ncb" nogil:
+    double unchecked_max(double a, double b) noexcept
+    float unchecked_max(float a, float b) noexcept
+
     size_t get_start_pos(size_t write_head, size_t size, size_t maxlen) noexcept
 
 cdef extern from "kernels.hpp" namespace "ncb::append" nogil:
@@ -2548,7 +2549,6 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '>self.abs_gate_lin_sq'}}
         {{py: _rel_gate_lin_sq_factor = 'self.rel_gate_lin_sq_factor' if is_f64 else '<' + c_type + '>self.rel_gate_lin_sq_factor'}}
-        {{py: _max_func = 'fmaxf' if suffix == Suffixes.F32.value else 'fmax'}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             if self.accum_valid:
                 if (
@@ -2576,7 +2576,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 return self._cached_gated_mean_sq
 
             result_{{suffix}} = self.sum_and_count_gt_{{suffix}}(
-                {{_max_func}}(
+                unchecked_max(
                     {{_abs_gate_lin_sq}},
                     (self.abs_gated_sum_sq_accum_{{suffix}} / self.abs_gated_count_accum) * {{_rel_gate_lin_sq_factor}}
                 )
