@@ -114,7 +114,8 @@ compiler_directives = {
     "linetrace": coverage_build,
     "binding": coverage_build,
 }
-define_macros: list[tuple[str, str]] = []
+
+define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 if coverage_build:
     define_macros.extend([("CYTHON_TRACE", "1"), ("CYTHON_TRACE_NOGIL", "1")])
 
