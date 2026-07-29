@@ -14,6 +14,7 @@
 
 import os
 import sys
+import sysconfig
 from pathlib import Path
 
 from setuptools import setup, Extension, find_packages
@@ -105,6 +106,8 @@ else:  # GCC/Clang
         extra_link_args.append("-g")
     else:
         extra_compile_args.append("-O3")
+        if sys.platform == "linux":
+            extra_link_args.append("-s")
 
     if save_asm:
         extra_compile_args.extend(["-save-temps", "-fverbose-asm"])
@@ -154,6 +157,15 @@ if is_test:
     )
 else:
     exclude_pkg_data.append("_test_cython_api.pyx")
+
+if not (debug_build or coverage_build):
+    cfg_vars = sysconfig.get_config_vars()
+    for key in ("CFLAGS", "CXXFLAGS", "OPT"):
+        if key in cfg_vars and isinstance(cfg_vars[key], str):
+            val = " " + cfg_vars[key] + " "
+            for g_flag in (" -g ", " -g1 ", " -g2 ", " -g3 "):
+                val = val.replace(g_flag, " ")
+            cfg_vars[key] = val.strip()
 
 setup(
     name="NumCircBuf",
