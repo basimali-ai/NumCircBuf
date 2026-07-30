@@ -205,9 +205,8 @@ setup(
     cmdclass={
         "build_py": FilteredBuildPy,
     },
-    packages=find_packages(),
     package_data={
-        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx", ".hpp"],
+        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx", "*.hpp", "py.typed"],
     },
     exclude_package_data={
         "numcircbuf": exclude_pkg_data,

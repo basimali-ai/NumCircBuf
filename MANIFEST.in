@@ -1,5 +1,6 @@
 # Include source files
 recursive-include src/numcircbuf *.py *.pyx *.pxd *.pyi *.hpp
+include src/numcircbuf/py.typed
 
 # Include documentation files
 include README.md

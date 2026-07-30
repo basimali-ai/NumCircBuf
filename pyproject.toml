@@ -35,18 +35,19 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.cibuildwheel]
-test-requires = ["pytest", "pytest-mock", "numpy", "cython"]
+test-requires = ["pytest", "pytest-mock", "numpy<3.0.0", "cython"]
 before-test = [
-    "pip install setuptools numpy cython",
-    "ONLY_TEST_API=1 python setup.py build_ext --inplace"
+    'pip install setuptools "numpy<3.0.0" cython',
+    'ONLY_TEST_API=1 python setup.py build_ext --inplace'
 ]
 test-command = "PYTHONPATH={project}/src/numcircbuf pytest {project}/tests"
 
 [[tool.cibuildwheel.overrides]]
 select = "*-win*"
+test-requires = ["pytest", "pytest-mock", "numpy^<3.0.0", "cython"]
 before-test = [
-    "pip install setuptools numpy cython",
-    "set ONLY_TEST_API=1&& python setup.py build_ext --inplace"
+    'pip install setuptools "numpy<3.0.0" cython',
+    'set ONLY_TEST_API=1&& python setup.py build_ext --inplace'
 ]
 test-command = "set PYTHONPATH={project}/src/numcircbuf&& pytest {project}/tests"
 
