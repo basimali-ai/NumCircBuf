@@ -15,28 +15,29 @@
 import os
 import threading
 import time
+from typing import Any
 
-import pytest
 import numpy as np
+import pytest
 
 from numcircbuf import BlockingCircBuffer
 from numcircbuf.exceptions import NumCircBufValueError
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+    import numcircbuf_test_cython_api as _test_cython_api  # type: ignore[unused-ignore, import-not-found] # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+        from numcircbuf import _test_cython_api  # type: ignore[unused-ignore, attr-defined] # pyright: ignore[reportMissingImports]  # noqa: I001
 
         HAS_C_TESTS = True
 
     except ImportError:
         HAS_C_TESTS = False
 
-from .constants import CAPACITIES, SUPPORTED_DTYPES_ALL, DTYPE_TO_SUFFIX
+from .constants import CAPACITIES, DTYPE_TO_SUFFIX, SUPPORTED_DTYPES_ALL
 
 is_valgrind = os.getenv("IS_VALGRIND", "0") == "1"
 
@@ -266,7 +267,7 @@ def test_multi_thread_ticket_skips(capacity, dtype):
 
     def test_write_skips():
         started.clear()
-        target_args_tuple = (
+        target_args_tuple: tuple[Any, ...] = (
             (producer_append, (1, -1, True)),
             (producer_append, (25, 0, False)),
             (producer_append, (2, -1, True)),

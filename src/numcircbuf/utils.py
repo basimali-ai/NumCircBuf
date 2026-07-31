@@ -21,18 +21,19 @@ buffer behavior based on specific workload types.
 """
 
 from __future__ import annotations
-import uuid
+
 import logging
 import time
-from typing import Callable, Literal, TYPE_CHECKING, Any, TypeVar, Generic, TypedDict
+import uuid
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypedDict, TypeVar
 
 import numpy as np
 
-from .exceptions import NumCircBufTypeError, NumCircBufValueError
+from ._typing import ConcreteFloating
 from .constants import Limits
-
-if TYPE_CHECKING:
-    from .core import RunningMeanBuffer, RunningMeanSqBuffer
+from .core import RunningMeanBuffer, RunningMeanSqBuffer
+from .exceptions import NumCircBufTypeError, NumCircBufValueError
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -86,8 +87,8 @@ class classproperty(Generic[R]):
 
 
 def determine_operation_focus(
-    buffer_type: "type[RunningMeanSqBuffer] | type[RunningMeanBuffer]",
-    dtype: type[np.float32] | type[np.float64],
+    buffer_type: type[RunningMeanSqBuffer[Any] | RunningMeanBuffer[Any]],
+    dtype: type[ConcreteFloating],
     buffer_maxlen: int,
     block_size: int,
     calc_every: int,
@@ -171,9 +172,9 @@ def determine_operation_focus(
         )
 
     from .bench_utils import (
-        temporary_benchmark_data,
-        raw_bench_with_calc,
         determine_num_runs,
+        raw_bench_with_calc,
+        temporary_benchmark_data,
     )
     from .system_info import get_available_ram
 
@@ -217,7 +218,7 @@ def determine_operation_focus(
             fill_path: str
             evict_path: str
 
-    temp_data_paths: "TempDataPaths" = {
+    temp_data_paths: TempDataPaths = {
         "data_path": f"temp_bench_data_{unique_id}.dat",
         "warmup_path": f"temp_bench_warmup_{unique_id}.dat",
         "offset_path": f"temp_bench_offset_{unique_id}.dat",
@@ -248,14 +249,25 @@ def determine_operation_focus(
     ):
         times = {}
 
+        operation_focus: Literal["calculation", "extend/append"]
         for operation_focus in ("calculation", "extend/append"):
-            buffer = buffer_type(
-                maxlen=buffer_maxlen,
-                operation_focus=operation_focus,
-                dtype=dtype,
-            )
+            buffer: RunningMeanSqBuffer[Any] | RunningMeanBuffer[Any]
+            if issubclass(buffer_type, RunningMeanSqBuffer):
+                buffer = RunningMeanSqBuffer(
+                    maxlen=buffer_maxlen,
+                    operation_focus=operation_focus,
+                    dtype=dtype,
+                )
+            else:
+                buffer = RunningMeanBuffer(
+                    maxlen=buffer_maxlen,
+                    operation_focus=operation_focus,
+                    dtype=dtype,
+                )
+
+            assert fill_data is not None and offset_data is not None
             times[operation_focus] = raw_bench_with_calc(
-                buffer,  # type: ignore[arg-type]
+                buffer,
                 getattr(buffer, func_str),
                 fill_data,
                 offset_data,

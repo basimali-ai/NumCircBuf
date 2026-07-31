@@ -13,43 +13,49 @@
 # limitations under the License.
 
 from __future__ import annotations
-from typing import Callable, Any
-import os
+
 import gc
-import time
 import math
+import os
+import time
+from collections.abc import Callable
+from typing import Any
 
-import pytest
 import numpy as np
+import pytest
 
+from numcircbuf import (
+    IntegratedGatedBuffer,
+    RunningMeanBuffer,
+    RunningMeanSqBuffer,
+)
 from numcircbuf.bench_utils import EvictArrConfig, touch_pages
+from numcircbuf.core import _UtilityBufferBP  # type: ignore[attr-defined]
 from numcircbuf.exceptions import (
-    ConfigurationValueError,
     ConfigurationTypeError,
+    ConfigurationValueError,
     NumCircBufNotImplementedError,
 )
-from numcircbuf import (
-    RunningMeanSqBuffer,
-    RunningMeanBuffer,
-    IntegratedGatedBuffer,
-)
-from numcircbuf.core import _UtilityBufferBP
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+    import numcircbuf_test_cython_api as _test_cython_api  # type: ignore[unused-ignore, import-not-found] # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+        from numcircbuf import _test_cython_api  # type: ignore[unused-ignore, attr-defined] # pyright: ignore[reportMissingImports]  # noqa: I001
 
         HAS_C_TESTS = True
 
     except ImportError:
         HAS_C_TESTS = False
 
-from .constants import SUPPORTED_DTYPES_FP, CAPACITIES, Limits
+from .constants import (  # type: ignore[attr-defined]
+    CAPACITIES,
+    SUPPORTED_DTYPES_FP,
+    Limits,
+)
 
 is_valgrind = os.getenv("IS_VALGRIND", "0") == "1"
 
@@ -235,8 +241,6 @@ def calculate_drift(
 
 def test_c_utility_buffer_bp():
     buf = _UtilityBufferBP()
-    np.dtype(np.float32).num
-
     func_set = {
         lambda: buf.append(1),
         lambda: buf.extend_unchecked(np.empty(1)),
@@ -273,21 +277,22 @@ def test_c_utility_buffer_bp():
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
 def test_nan_inf_handling(buf_name, buf_funcs, dtype):
     for val, val_assert_fn in (
-        (float("INF"), lambda: buf_funcs["metric_fn"](buf) == val),
-        (float("NAN"), lambda: math.isnan(buf_funcs["metric_fn"](buf))),
+        (float("INF"), lambda b, v: buf_funcs["metric_fn"](b) == v),
+        (float("NAN"), lambda b, v: math.isnan(buf_funcs["metric_fn"](b))),
     ):
         buf = buf_funcs["init"](6, dtype)
 
+        fn: Callable
         for fn in (
-            lambda: buf.append(val),
-            lambda: buf.extend([val] * 2),
-            lambda: buf.extend_unchecked(np.array([val] * 3, dtype=dtype)),
-            lambda: buf.append(1),
-            lambda: buf.extend([1] * 2),
-            lambda: buf.extend_unchecked(np.array([1] * 2, dtype=dtype)),
+            lambda b=buf, v=val: b.append(v),
+            lambda b=buf, v=val: b.extend([v] * 2),
+            lambda b=buf, v=val: b.extend_unchecked(np.array([v] * 3, dtype=dtype)),
+            lambda b=buf: b.append(1),
+            lambda b=buf: b.extend([1] * 2),
+            lambda b=buf: b.extend_unchecked(np.array([1] * 2, dtype=dtype)),
         ):
             fn()
-            assert val_assert_fn()
+            assert val_assert_fn(buf, val)
 
         ###
 
@@ -295,12 +300,12 @@ def test_nan_inf_handling(buf_name, buf_funcs, dtype):
         assert buf_funcs["metric_fn"](buf) == 1
 
         for fn in (
-            lambda block: buf.extend(block),
-            lambda block: buf.extend_unchecked(np.array(block, dtype=dtype)),
+            lambda block, b=buf: b.extend(block),
+            lambda block, b=buf: b.extend_unchecked(np.array(block, dtype=dtype)),
         ):
             fn([val] * 6)
             fn([1] * 4)
-            assert val_assert_fn()
+            assert val_assert_fn(buf, val)
             fn([1] * 2)
             assert buf_funcs["metric_fn"](buf) == 1
 
@@ -309,12 +314,12 @@ def test_nan_inf_handling(buf_name, buf_funcs, dtype):
         full_val_arr = np.array([val] * 6, dtype=dtype)
 
         for fn in (
-            lambda: buf.extend_unchecked(full_val_arr),
+            lambda b=buf, v_arr=full_val_arr: b.extend_unchecked(v_arr),
             buf.recalculate,
             buf.clear_cache,
         ):
             fn()
-            assert val_assert_fn()
+            assert val_assert_fn(buf, val)
 
         buf.clear()
         assert buf_funcs["metric_fn"](buf) == 0
@@ -323,14 +328,14 @@ def test_nan_inf_handling(buf_name, buf_funcs, dtype):
 
         if math.isnan(val):
             buf.clear_infs()
-            assert val_assert_fn()
+            assert val_assert_fn(buf, val)
 
             buf.clear_nans()
             assert buf_funcs["metric_fn"](buf) == 0
 
         elif val == float("INF"):
             buf.clear_nans()
-            assert val_assert_fn()
+            assert val_assert_fn(buf, val)
 
             buf.clear_infs()
             assert buf_funcs["metric_fn"](buf) == 0
@@ -348,14 +353,14 @@ def test_nan_inf_handling(buf_name, buf_funcs, dtype):
         buf.extend([1] * 3)
         assert buf_funcs["metric_fn"](buf) == 1
         buf.extend([val] * 3)
-        assert val_assert_fn()
+        assert val_assert_fn(buf, val)
 
         buf.append(1)
-        assert val_assert_fn()
+        assert val_assert_fn(buf, val)
         buf.extend_unchecked(np.array([1], dtype=dtype))
-        assert val_assert_fn()
+        assert val_assert_fn(buf, val)
         buf.extend([1])
-        assert val_assert_fn()
+        assert val_assert_fn(buf, val)
 
         buf.extend([1] * 3)
         assert buf_funcs["metric_fn"](buf) == 1
@@ -443,9 +448,9 @@ def test_special_and_invalid_thresholds(capacity, dtype):
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
 def test_internal_current_abs_gated_mean_sq(capacity, dtype):
     buf = IntegratedGatedBuffer(capacity, ABS_GATE_LUFS, REL_GATE_LU, dtype=dtype)
-    assert buf._current_abs_gated_mean_sq() == 0
+    assert buf._current_abs_gated_mean_sq() == 0  # type: ignore[attr-defined]
     buf.append(1)
-    assert buf._current_abs_gated_mean_sq() == 1
+    assert buf._current_abs_gated_mean_sq() == 1  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize("dtype", SUPPORTED_DTYPES_FP)
@@ -584,7 +589,7 @@ def test_invalid_recalc_type(buf_name, buf_funcs, recalc_threshold, capacity, dt
     assert exc.obj is None
     assert exc.parameter == "recalc_threshold"
     assert exc.received_type is type(recalc_threshold)
-    assert exc.valid_types == (int, None)
+    assert exc.valid_types == (int, type(None))
     assert exc.message
 
 

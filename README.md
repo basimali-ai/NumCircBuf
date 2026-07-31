@@ -417,8 +417,8 @@ def __init__(
     self,
     maxlen: int,
     operation_focus: Literal["extend/append", "calculation"],
-    recalc_threshold: int | None = 0,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    recalc_threshold: int | None = 0,
 ) -> None:
 ```
 
@@ -509,10 +509,14 @@ def __init__(
     maxlen: int,
     operation_focus: Literal["extend/append", "calculation"],
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    recalc_threshold: int | None = 0,
 ) -> None:
 ```
 
-`operation_focus` works the same as in [RunningMeanSqBuffer](#operation-focus).
+These work the same as in RunningMeanSqBuffer:
+
+- [operation_focus](#operation-focus)
+- [recalc_threshold](#recalculation-threshold).
 
 #### Usage Example
 
@@ -544,8 +548,8 @@ def __init__(
     maxlen: int,
     abs_gate_lufs: float,
     rel_gate_lu: float,
-    recalc_threshold: int | None = 0,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    recalc_threshold: int | None = 0,
 ) -> None:
 ```
 

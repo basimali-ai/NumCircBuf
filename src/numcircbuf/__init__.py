@@ -23,10 +23,10 @@ from importlib.metadata import version
 
 from .core import (
     BlockingCircBuffer,
-    OverwriteCircBuffer,
-    RunningMeanSqBuffer,
-    RunningMeanBuffer,
     IntegratedGatedBuffer,
+    OverwriteCircBuffer,
+    RunningMeanBuffer,
+    RunningMeanSqBuffer,
 )
 from .utils import determine_operation_focus
 
@@ -34,9 +34,9 @@ __version__ = version("numcircbuf")
 
 __all__ = [
     "BlockingCircBuffer",
-    "OverwriteCircBuffer",
-    "RunningMeanSqBuffer",
-    "RunningMeanBuffer",
     "IntegratedGatedBuffer",
+    "OverwriteCircBuffer",
+    "RunningMeanBuffer",
+    "RunningMeanSqBuffer",
     "determine_operation_focus",
 ]

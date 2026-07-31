@@ -16,12 +16,13 @@ import os
 import sys
 import sysconfig
 from pathlib import Path
+from typing import Any
 
-from setuptools import setup, Extension, find_packages
-from setuptools.command.build_py import build_py
-from Cython.Build import cythonize
 import Cython.Tempita as tempita
 import numpy as np
+from Cython.Build import cythonize
+from setuptools import Extension, setup
+from setuptools.command.build_py import build_py
 
 src_dir = Path("src/numcircbuf")
 core_file_name = "core"
@@ -37,12 +38,12 @@ only_test_api = os.getenv("ONLY_TEST_API", "0") == "1"
 is_test = only_test_api or test_build or debug_build or coverage_build
 
 
-class FilteredBuildPy(build_py):
+class FilteredBuildPy(build_py):  # type: ignore[misc]
     """Intercept the Python module discovery and remove targeted modules."""
 
     _filtered_build_py_excluded_modules = ("_build_helpers",)
 
-    def find_package_modules(self, package, package_dir):
+    def find_package_modules(self, package: Any, package_dir: Any) -> Any:
         modules = super().find_package_modules(package, package_dir)
         filtered_modules = [
             (pkg, mod, filepath)
@@ -171,7 +172,7 @@ setup(
     name="NumCircBuf",
     version="1.1.2",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
-    long_description=open("README.md", encoding="utf-8").read(),
+    long_description=Path("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     author="Syed Basim Ali",
     author_email="basim.ali.contact@gmail.com",

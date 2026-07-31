@@ -22,16 +22,20 @@ allowing the use of `isinstance()` to verify implementation compliance.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Protocol, runtime_checkable, Any, Iterator
+
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Generic, Protocol, overload, runtime_checkable
 
 import numpy as np
 
+from ._typing import ConcreteFloatingT, ConcreteIntegerT, ConcreteScalarT_co
+
 if TYPE_CHECKING:
-    from .exceptions import NumCircBufIndexError, InvalidModification  # noqa: F401
+    from .exceptions import IndexOutOfBounds, InvalidModification  # noqa: F401
 
 
 @runtime_checkable
-class ViewProtocol(Protocol):
+class ViewProtocol(Protocol, Generic[ConcreteScalarT_co]):
     """
     Provides a zero-copy, read-only logical view of a circular buffer.
 
@@ -56,7 +60,8 @@ class ViewProtocol(Protocol):
     def __len__(self) -> int:
         """Returns the current number of items in the buffer."""
 
-    def __getitem__(self, idx: int | slice) -> int | float | np.ndarray:
+    @overload
+    def __getitem__(self: ViewProtocol[ConcreteFloatingT], idx: int) -> float:
         """
         Retrieves an item or a slice in logical order.
 
@@ -66,10 +71,19 @@ class ViewProtocol(Protocol):
         - If `idx` is a slice:
             Returns a 1-D NumPy array of the buffer's dtype.
 
-        :raises :exc:`NumCircBufIndexError`: If the index is out of bounds.
+        :raises :exc:`IndexOutOfBounds`: If the index is out of bounds.
         """
 
-    def __iter__(self) -> Iterator[int | float]:
+    @overload
+    def __getitem__(self: ViewProtocol[ConcreteIntegerT], idx: int) -> int: ...
+
+    @overload
+    def __getitem__(
+        self: ViewProtocol[ConcreteScalarT_co], idx: slice
+    ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT_co]]: ...
+
+    @overload
+    def __iter__(self: ViewProtocol[ConcreteFloatingT]) -> Iterator[float]:
         """
         Iterates over the buffer in logical order.
 
@@ -77,15 +91,18 @@ class ViewProtocol(Protocol):
         (`int`, `float`).
         """
 
+    @overload
+    def __iter__(self: ViewProtocol[ConcreteIntegerT]) -> Iterator[int]: ...
+
     @property
     def maxlen(self) -> int:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteScalarT_co]:
         """Returns the dtype of the buffer."""
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT_co]]:
         """
         Returns a contiguous NumPy array copy of the data in logical order.
         """
@@ -97,7 +114,7 @@ class WriteBenchmarkBufferProtocol(Protocol):
     Protocol for Write Benchmark of a Buffer
     """
 
-    def extend_unchecked(self, block_np: np.ndarray, **kwargs: Any) -> None:
+    def extend_unchecked(self, block_np: np.ndarray) -> Any:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -108,7 +125,7 @@ class WriteBenchmarkBufferProtocol(Protocol):
         :type block_np: np.ndarray
         """
 
-    def append(self, value: float | int, **kwargs: Any) -> None:
+    def append(self, value: float | int) -> Any:
         """
         Appends a single value to the buffer.
 
@@ -116,7 +133,7 @@ class WriteBenchmarkBufferProtocol(Protocol):
         :type value: float
         """
 
-    def clear(self, **kwargs: Any) -> None:
+    def clear(self) -> Any:
         """
         Clears all data from the buffer.
 
@@ -130,12 +147,12 @@ class ReadWriteBenchmarkBufferProtocol(Protocol):
     Protocol for Read and Write Benchmark of a Buffer
     """
 
-    def read(self, **kwargs: Any) -> None:
+    def read(self) -> Any:
         """
         Reads all valid items from the buffer.
         """
 
-    def read_into(self, out_array_np: np.ndarray, **kwargs: Any) -> None:
+    def read_into(self, out_array_np: np.ndarray) -> Any:
         """
         High-Performance Read. Fills existing np array (zero allocation).
 
@@ -143,7 +160,7 @@ class ReadWriteBenchmarkBufferProtocol(Protocol):
         :type out_array_np: np.ndarray
         """
 
-    def write_extend_unchecked(self, block_np: np.ndarray, **kwargs: Any) -> None:
+    def write_extend_unchecked(self, block_np: np.ndarray) -> Any:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -154,7 +171,7 @@ class ReadWriteBenchmarkBufferProtocol(Protocol):
         :type block_np: np.ndarray
         """
 
-    def write_append(self, value: float | int, **kwargs: Any) -> None:
+    def write_append(self, value: float | int) -> Any:
         """
         Appends a single value to the buffer.
 
@@ -162,7 +179,7 @@ class ReadWriteBenchmarkBufferProtocol(Protocol):
         :type value: float
         """
 
-    def clear(self, **kwargs: Any) -> None:
+    def clear(self) -> Any:
         """
         Clears all data from the buffer.
 

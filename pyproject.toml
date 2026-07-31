@@ -56,10 +56,27 @@ python_version = "3.11"
 files = "numcircbuf"
 exclude = ".*\\.pyx|.*\\.pxd"
 ignore_missing_imports = true
-strict_optional = true
-warn_no_return = true
-warn_unused_ignores = true
+strict = true
 follow_imports = "silent"
+untyped_calls_exclude = ["Cython"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "perf.*"]
+strict = false
+disallow_untyped_calls = false
+disable_error_code = [
+    "call-overload",
+    "var-annotated",
+    "type-arg",
+    "no-untyped-def"
+]
+
+[tool.ruff.lint]
+ignore = ["DTZ005", "PYI041", "UP007"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["BLE001"]
+"perf/**/*.py" = ["BLE001"]
 
 [tool.pytest.ini_options]
 python_files = "test_*.py"

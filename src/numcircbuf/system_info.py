@@ -21,16 +21,17 @@ enabling the library to make hardware-aware optimization decisions.
 """
 
 from __future__ import annotations
-import os
-import sys
+
+import ctypes
 import glob
 import logging
-import ctypes
+import os
+import sys
 from functools import lru_cache
 from mmap import PAGESIZE as _MMAP_PAGESIZE
 
 from .constants import TYPICAL_CACHE_LINE
-from .exceptions import NumCircBufRuntimeError, NumCircBufOSError
+from .exceptions import NumCircBufOSError, NumCircBufRuntimeError
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def _get_cache_line_size_windows() -> int | None:
         _fields_ = [("NodeNumber", wintypes.DWORD)]
 
     class _U(ctypes.Union):
-        _fields_ = [
+        _fields_ = [  # noqa: RUF012
             ("ProcessorCore", PROCESSORCORE),
             ("NumaNode", NUMANODE),
             ("Cache", CACHE_DESCRIPTOR),
@@ -207,7 +208,7 @@ def _get_l3_win32() -> int | None:
         ]
 
     class SYSTEM_LOGICAL_PROCESSOR_INFORMATION_UNION(ctypes.Union):
-        _fields_ = [
+        _fields_ = [  # noqa: RUF012
             ("Cache", CACHE_DESCRIPTOR),
             ("Reserved", ctypes.c_ulonglong * 2),
         ]
@@ -268,7 +269,7 @@ def _get_l3_linux() -> int | None:
             if s.endswith("M"):
                 return int(s[:-1]) * 1024**2
             return int(s)
-        except Exception:  # pragma: no cover
+        except Exception:  # pragma: no cover  # noqa: BLE001, S112
             continue
     return None
 

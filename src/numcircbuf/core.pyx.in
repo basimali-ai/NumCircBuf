@@ -1473,7 +1473,7 @@ cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
                 (str,),
             )
         elif return_overwritten_policy == POLICY_NEVER:
-            self.overwritten_mode = _MODE_NEVER            
+            self.overwritten_mode = _MODE_NEVER
         elif return_overwritten_policy == POLICY_ALWAYS:
             self.overwritten_mode = _MODE_ALWAYS
         elif return_overwritten_policy == POLICY_CONDITIONAL:
@@ -1800,7 +1800,7 @@ cdef void _shared_utility_buffer_init(
             self.__class__,
             'recalc_threshold',
             type(recalc_threshold),
-            (int, None),
+            (int, type(None)),
         )
     elif recalc_threshold < 0 or recalc_threshold > UINT64_MAX:
         raise exceptions.ConfigurationValueError(
