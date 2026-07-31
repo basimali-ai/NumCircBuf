@@ -516,7 +516,7 @@ def __init__(
 These work the same as in RunningMeanSqBuffer:
 
 - [operation_focus](#operation-focus)
-- [recalc_threshold](#recalculation-threshold).
+- [recalc_threshold](#recalculation-threshold)
 
 #### Usage Example
 
@@ -727,7 +727,7 @@ If you use NumCircBuf in your research or projects, please cite it as:
   title = {NumCircBuf: High-Performance Numerical Circular Buffers for Python},
   year = {2026},
   url = {https://github.com/basimali-ai/NumCircBuf},
-  version = {1.1.2}
+  version = {1.2.0}
 }
 ```
 

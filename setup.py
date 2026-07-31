@@ -170,7 +170,7 @@ if not (debug_build or coverage_build):
 
 setup(
     name="NumCircBuf",
-    version="1.1.2",
+    version="1.2.0",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
     long_description=Path("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",

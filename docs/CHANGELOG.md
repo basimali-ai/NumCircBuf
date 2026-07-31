@@ -69,3 +69,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **README:** Refine library overview and `Features` section.
+
+## [1.2.0] - 2026-07-31
+
+### Fixed
+
+- **RunningMeanBuffer:** Correct typing stubs to reflect that `__init__` supports the `recalc_threshold` argument.
+- **RunningMeanSqBuffer** and **IntegratedGatedBuffer:** Correct the positional placement of the `dtype` argument in `__init__`.
+- **Linux wheels:** Reduce binary size by removing unintended debug information from release builds:
+  - `manylinux_2_24_x86_64`: 1.2 MB → 230 kB
+  - `musllinux_1_2_x86_64`: 2.2 MB → 1.3 MB
+
+### Changed
+
+- **Type hints:**
+  - Add a `py.typed` marker file (PEP 561) to formally expose the library's existing type hints to static analyzers like `mypy`.
+  - Add strict type support conforming to `mypy --strict`.
+  - Improve developer experience by adopting `TypeVar` and `Generic`.
+  - Allow static type checkers to infer the generic type of buffer classes from the `dtype` argument.
+  - Allow static type checkers to infer the generic type of views from their parent buffer object.
+  - Relax strictness of benchmark buffer protocols.
+
+- **Performance Optimizations:**
+  - RunningMeanBuffer, RunningMeanSqBuffer, and IntegratedGatedBuffer:
+    - Implement custom bit-checking for finite validation to handle non-finite (NaN/Inf) edge cases, primarily affecting Windows.
+    - Eliminate function call overhead from `stdlib:isfinite`, enabling the Windows compiler (MSVC) to utilize SIMD registers and perform loop unrolling during finite-array checks.
+  - IntegratedGatedBuffer:
+    - Replace standard `fmax` and `fmaxf` calls with custom unchecked equivalents under the guaranteed absence of NaN values.
+  - Use explicit conditional expressions and move select helper functions into C++ to ensure compilers reliably generate branchless conditional moves.
