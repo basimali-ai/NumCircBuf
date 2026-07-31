@@ -14,27 +14,27 @@
 
 import warnings
 
-import pytest
 import numpy as np
+import pytest
 
 from numcircbuf import (
-    OverwriteCircBuffer,
     BlockingCircBuffer,
-    RunningMeanSqBuffer,
-    RunningMeanBuffer,
     IntegratedGatedBuffer,
+    OverwriteCircBuffer,
+    RunningMeanBuffer,
+    RunningMeanSqBuffer,
 )
 from numcircbuf.exceptions import (
-    IndexOutOfBounds,
-    BufferCapacityValueError,
     BufferCapacityTypeError,
-    DataTypeError,
+    BufferCapacityValueError,
     DataSizeWarning,
-    NumCircBufValueError,
+    DataTypeError,
+    IndexOutOfBounds,
     InvalidModification,
+    NumCircBufValueError,
 )
 
-from .constants import (
+from .constants import (  # type: ignore[attr-defined]
     CAPACITIES,
     SUPPORTED_DTYPES_ALL,
     SUPPORTED_DTYPES_FP,
@@ -587,9 +587,8 @@ def _test_append_extend(buf_name, buf_funcs, capacity, dtype):
     else:
         assert np.array_equal(buf.view()[:], np.tile(quarter_sequence, 2))
 
-    if buf_name == "BlockingCircBuffer":
-        if len(buf):
-            buf.read()
+    if buf_name == "BlockingCircBuffer" and len(buf):
+        buf.read()
     buf_funcs["extend_unchecked"](buf, full_sequence)
     assert len(buf) == capacity
     if buf_name == "IntegratedGatedBuffer":

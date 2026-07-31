@@ -22,37 +22,39 @@ and statistical accumulators/functions.
 """
 
 from __future__ import annotations
-import logging
-from typing import Callable, Any
-from time import perf_counter_ns
-import sys
-from datetime import datetime
-import gc
+
 import ctypes
-import os
-from contextlib import contextmanager
-from typing import Literal
-import re
-import platform
+import gc
+import logging
 import math
+import os
+import platform
+import re
+import sys
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from datetime import datetime
+from time import perf_counter_ns
+from typing import Any, Literal, overload
 
 import numpy as np
 
-from .utils import classproperty
+from ._typing import Scalar, ScalarT, ShapeT
+from .exceptions import (
+    NumCircBufArithmeticError,
+    NumCircBufTypeError,
+    NumCircBufValueError,
+)
+from .protocols import (
+    ReadWriteBenchmarkBufferProtocol,
+    WriteBenchmarkBufferProtocol,
+)
 from .system_info import (
     PAGESIZE,
     get_cache_line_size,
     get_cpu_l3_cache,
 )
-from .protocols import (
-    WriteBenchmarkBufferProtocol,
-    ReadWriteBenchmarkBufferProtocol,
-)
-from .exceptions import (
-    NumCircBufValueError,
-    NumCircBufTypeError,
-    NumCircBufArithmeticError,
-)
+from .utils import classproperty
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -78,7 +80,7 @@ class EvictArrConfig:
     Values are cached and shared across all instances.
     """
 
-    _dtype: type[np.floating] | type[np.integer] | None = None
+    _dtype: type[Scalar] | None = None
     """Internal storage for the NumPy dtype. Initialized on first access or via set_dtype."""
 
     _bytes: int | None = None
@@ -88,7 +90,7 @@ class EvictArrConfig:
     """Internal cache for item size. Resets whenever dtype is changed."""
 
     @classproperty
-    def dtype(cls) -> type[np.floating] | type[np.integer]:
+    def dtype(cls) -> type[Scalar]:
         """
         NumPy dtype used for the eviction array.
 
@@ -130,10 +132,7 @@ class EvictArrConfig:
         return cls._bytes
 
     @classmethod
-    def set_dtype(
-        cls,
-        dtype: type[np.floating] | type[np.integer],
-    ):
+    def set_dtype(cls, dtype: type[Scalar]) -> None:
         """
         Set the NumPy dtype for the eviction array and invalidate the cached item size.
 
@@ -144,7 +143,7 @@ class EvictArrConfig:
         cls._item_size = None
 
     @classmethod
-    def set_bytes(cls, value: int):
+    def set_bytes(cls, value: int) -> None:
         """
         Set the target size of the array in bytes.
 
@@ -202,7 +201,7 @@ def get_cpu_name() -> str:
                     break
             else:
                 for line in cpuinfo.splitlines():
-                    if line.startswith("Hardware") or line.startswith("Processor"):
+                    if line.startswith(("Hardware", "Processor")):
                         name = line.split(":", 1)[1].strip()
                         break
 
@@ -214,7 +213,7 @@ def get_cpu_name() -> str:
                 text=True,
             ).strip()
 
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover  # noqa: BLE001, S110
         pass
 
     if not name:
@@ -230,12 +229,12 @@ def get_cpu_name() -> str:
 
 
 def touch_pages(
-    arr: np.ndarray,
+    arr: np.ndarray[tuple[int], np.dtype[Scalar]],
     *,
     warm_cache: bool = False,
     page_size: int = PAGESIZE,
     cache_line_bytes: int | None = None,
-):
+) -> None:
     """
     Iterate through a NumPy array to ensure memory pages are resident in RAM,
     and CPU cache if `warm_cache` is True.
@@ -271,7 +270,7 @@ def touch_pages(
     np.add.reduce(arr[:: page_size // arr.itemsize])
 
 
-def set_process_priority(priority: Literal["high", "normal"] = "high"):
+def set_process_priority(priority: Literal["high", "normal"] = "high") -> None:
     """
     Adjust the scheduling priority of the current process.
 
@@ -306,7 +305,7 @@ def set_process_priority(priority: Literal["high", "normal"] = "high"):
 
 
 @contextmanager
-def no_gc():
+def no_gc() -> Generator[None, None, None]:
     """
     Context manager to temporarily disable the Python Garbage Collector.
 
@@ -324,7 +323,23 @@ def no_gc():
         gc.enable()
 
 
-def trimmed_mean_times(arr: np.ndarray, return_int: bool) -> int | float:
+@overload
+def trimmed_mean_times(
+    arr: np.ndarray[tuple[int], np.dtype[Scalar]], return_int: Literal[True]
+) -> int: ...
+@overload
+def trimmed_mean_times(
+    arr: np.ndarray[tuple[int], np.dtype[Scalar]], return_int: Literal[False]
+) -> float: ...
+@overload
+def trimmed_mean_times(
+    arr: np.ndarray[tuple[int], np.dtype[Scalar]], return_int: bool
+) -> int | float: ...
+
+
+def trimmed_mean_times(
+    arr: np.ndarray[tuple[int], np.dtype[Scalar]], return_int: bool
+) -> int | float:
     """
     Calculate the trimmed mean of an array.
 
@@ -378,7 +393,7 @@ def determine_num_runs(
     maxlen: int | None = None,
     block_size: int | None = None,
     with_fill: bool,
-):
+) -> tuple[int, int, int]:
     """
     Calculate the number of benchmark iterations possible within memory constraints.
 
@@ -469,14 +484,14 @@ def determine_num_runs(
 
 
 def generate_rand_memmap_arr(
-    dtype: type[np.floating] | type[np.integer],
-    shape: tuple[int, int] | tuple[int],
+    dtype: type[ScalarT],
+    shape: ShapeT,
     path: str,
     rng: np.random.Generator,
     *,
-    multiply_by: np.floating | np.integer | float | int | None = None,
-    subtract: np.floating | np.integer | float | int | None = None,
-) -> np.memmap:
+    multiply_by: Scalar | float | None = None,
+    subtract: Scalar | float | None = None,
+) -> np.memmap[ShapeT, np.dtype[ScalarT]]:
     """
     Create a memory-mapped file filled with random data, optionally transformed.
 
@@ -486,10 +501,10 @@ def generate_rand_memmap_arr(
     and `subtract`.
 
     :param dtype: The NumPy data type for the array.
-    :type dtype: type[np.floating] | type[np.integer]
+    :type dtype: type[Scalar]
 
     :param shape: The dimensions of the array.
-    :type shape: tuple[int, int] | tuple[int]
+    :type shape: tuple[int, ...]
 
     :param path: Filesystem path where the memmap file will be created.
     :type path: str
@@ -498,10 +513,10 @@ def generate_rand_memmap_arr(
     :type rng: np.random.Generator
 
     :param multiply_by: Factor to multiply each element by. Defaults to None.
-    :type multiply_by: np.floating | np.integer | float | int | None = None
+    :type multiply_by: Scalar | float | int | None = None
 
     :param subtract: Value to subtract from each element. Defaults to None.
-    :type subtract: np.floating | np.integer | float | int | None = None
+    :type subtract: Scalar | float | int | None = None
 
     :return: A reference to the memory-mapped NumPy array.
     :rtype: np.memmap
@@ -521,34 +536,24 @@ def generate_rand_memmap_arr(
 
     data = np.memmap(path, dtype=dtype, mode="w+", shape=shape)
 
-    if multiply_by is None:
-        multiply_needed = False
-    else:
-        multiply_needed = True
-
-    if subtract is None:
-        subtraction_needed = False
-    else:
-        subtraction_needed = True
-
     if is_int:
         info = np.iinfo(dtype)  # type: ignore
 
-        if subtraction_needed:
-            if not float(subtract).is_integer():  # type: ignore
+        if subtract is not None:
+            if not float(subtract).is_integer():
                 raise NumCircBufValueError(
                     message="subtract must be an integer for integer dtype"
                 )
-            sub = int(subtract)  # type: ignore
+            sub = int(subtract)
         else:
             sub = 0
 
-        if multiply_needed:
-            if not float(multiply_by).is_integer():  # type: ignore
+        if multiply_by is not None:
+            if not float(multiply_by).is_integer():
                 raise NumCircBufValueError(
                     message="multiply_by must be an integer for integer dtype"
                 )
-            mul = int(multiply_by)  # type: ignore
+            mul = int(multiply_by)
         else:
             mul = 1
 
@@ -593,16 +598,16 @@ def generate_rand_memmap_arr(
         if dtype == np.float32 or dtype == np.float64:
             rng.random(shape, dtype=dtype, out=data)  # type: ignore
 
-    if multiply_needed:
-        data *= multiply_by
-    if subtraction_needed:
-        data -= subtract
+    if multiply_by is not None:
+        data *= multiply_by  # type: ignore[arg-type]
+    if subtract is not None:
+        data -= subtract  # type: ignore[arg-type]
 
     return data
 
 
 def generate_bench_memmaps(
-    dtype: type[np.floating] | type[np.integer],
+    dtype: type[ScalarT],
     maxlen: int,
     block_size: int,
     n_runs: int,
@@ -615,7 +620,18 @@ def generate_bench_memmaps(
     offset_path: str = "temp_bench_offset.dat",
     fill_path: str = "temp_bench_fill.dat",
     evict_path: str = "temp_bench_evict.dat",
-):
+) -> tuple[
+    str,
+    np.memmap[tuple[int, int], np.dtype[ScalarT]],
+    str,
+    np.memmap[tuple[int], np.dtype[ScalarT]],
+    str,
+    np.memmap[tuple[int, int], np.dtype[ScalarT]] | None,
+    str,
+    np.memmap[tuple[int, int], np.dtype[ScalarT]] | None,
+    str,
+    np.memmap[tuple[int], np.dtype[Scalar]] | None,
+]:
     """
     Orchestrate the generation of multiple memmap files for benchmarking.
 
@@ -747,7 +763,7 @@ def generate_bench_memmaps(
 
 @contextmanager
 def temporary_benchmark_data(
-    dtype: type[np.floating] | type[np.integer],
+    dtype: type[ScalarT],
     buffer_maxlen: int,
     block_size: int,
     n_runs: int,
@@ -761,7 +777,22 @@ def temporary_benchmark_data(
     fill_path: str = "temp_bench_fill.dat",
     evict_path: str = "temp_bench_evict.dat",
     log_delete_errors: bool = True,
-):
+) -> Generator[
+    tuple[
+        str,
+        np.memmap[tuple[int, int], np.dtype[ScalarT]],
+        str,
+        np.memmap[tuple[int], np.dtype[ScalarT]],
+        str,
+        np.memmap[tuple[int, int], np.dtype[ScalarT]] | None,
+        str,
+        np.memmap[tuple[int, int], np.dtype[ScalarT]] | None,
+        str,
+        np.memmap[tuple[int], np.dtype[Scalar]] | None,
+    ],
+    None,
+    None,
+]:
     """
     Context manager to handle lifecycle of temporary benchmark data files.
 
@@ -864,7 +895,7 @@ def temporary_benchmark_data(
                 mmap_obj = getattr(var, "_mmap", None)
                 if mmap_obj is not None:
                     mmap_obj.close()
-            except Exception:  # pragma: no cover
+            except Exception:  # pragma: no cover  # noqa: BLE001, S110
                 pass
 
         for path in (
@@ -886,15 +917,68 @@ def temporary_benchmark_data(
                     )
 
 
+@overload
 def prepare_blocks(
     block_size: int,
     maxlen: int,
-    dtype: type[np.floating] | type[np.integer],
+    dtype: type[ScalarT],
     n_runs: int,
     data_path: str,
     data_shape: tuple[int, int],
     warmup_path: str,
-    warmup_data_shape: tuple[int, int],
+    warmup_data_shape: tuple[int],
+    *,
+    single_offset: Literal[True],
+    offset_path: str = "",
+    offset_data_shape: tuple[int, int] = (0, 0),
+    prepare_fill: bool,
+    fill_path: str = "",
+    fill_data_shape: tuple[int, int] = (0, 0),
+    prepare_evict: bool,
+    evict_path: str = "",
+) -> tuple[
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]] | None,
+    np.memmap[tuple[int], np.dtype[Scalar]] | None,
+]: ...
+@overload
+def prepare_blocks(
+    block_size: int,
+    maxlen: int,
+    dtype: type[ScalarT],
+    n_runs: int,
+    data_path: str,
+    data_shape: tuple[int, int],
+    warmup_path: str,
+    warmup_data_shape: tuple[int],
+    *,
+    single_offset: Literal[False],
+    offset_path: str = "",
+    offset_data_shape: tuple[int, int] = (0, 0),
+    prepare_fill: bool,
+    fill_path: str = "",
+    fill_data_shape: tuple[int, int] = (0, 0),
+    prepare_evict: bool,
+    evict_path: str = "",
+) -> tuple[
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]] | None,
+    np.memmap[tuple[int], np.dtype[Scalar]] | None,
+]: ...
+@overload
+def prepare_blocks(
+    block_size: int,
+    maxlen: int,
+    dtype: type[ScalarT],
+    n_runs: int,
+    data_path: str,
+    data_shape: tuple[int, int],
+    warmup_path: str,
+    warmup_data_shape: tuple[int],
     *,
     single_offset: bool,
     offset_path: str = "",
@@ -904,7 +988,40 @@ def prepare_blocks(
     fill_data_shape: tuple[int, int] = (0, 0),
     prepare_evict: bool,
     evict_path: str = "",
-):
+) -> tuple[
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int] | tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]] | None,
+    np.memmap[tuple[int], np.dtype[Scalar]] | None,
+]: ...
+
+
+def prepare_blocks(
+    block_size: int,
+    maxlen: int,
+    dtype: type[ScalarT],
+    n_runs: int,
+    data_path: str,
+    data_shape: tuple[int, int],
+    warmup_path: str,
+    warmup_data_shape: tuple[int],
+    *,
+    single_offset: bool,
+    offset_path: str = "",
+    offset_data_shape: tuple[int, int] = (0, 0),
+    prepare_fill: bool,
+    fill_path: str = "",
+    fill_data_shape: tuple[int, int] = (0, 0),
+    prepare_evict: bool,
+    evict_path: str = "",
+) -> tuple[
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int] | tuple[int], np.dtype[ScalarT]],
+    np.ndarray[tuple[int, int], np.dtype[ScalarT]] | None,
+    np.memmap[tuple[int], np.dtype[Scalar]] | None,
+]:
     """
     Re-map existing benchmark files into read-only NumPy arrays.
 
@@ -966,7 +1083,9 @@ def prepare_blocks(
     """
 
     blocks_full = np.memmap(data_path, dtype=dtype, mode="r", shape=data_shape)
-    blocks = blocks_full[:n_runs, :block_size]
+    blocks: np.ndarray[tuple[int, int], np.dtype[ScalarT]] = blocks_full[
+        :n_runs, :block_size
+    ]
 
     warmup_data = np.memmap(
         warmup_path,
@@ -974,8 +1093,9 @@ def prepare_blocks(
         mode="r",
         shape=warmup_data_shape,
     )
-    warmup_block = warmup_data[:maxlen]
+    warmup_block: np.ndarray[tuple[int], np.dtype[ScalarT]] = warmup_data[:maxlen]
 
+    offset: np.ndarray[tuple[int, int] | tuple[int], np.dtype[ScalarT]]
     if single_offset:
         offset = warmup_block[: maxlen - (block_size // 2)]
     elif offset_path and offset_data_shape != (0, 0):
@@ -992,6 +1112,7 @@ def prepare_blocks(
             "offset path and/or shape was not provided or is invalid."
         )
 
+    fill: np.ndarray[tuple[int, int], np.dtype[ScalarT]] | None
     if prepare_fill:
         if fill_path and fill_data_shape != (0, 0):
             fill_blocks_full = np.memmap(
@@ -1009,6 +1130,7 @@ def prepare_blocks(
     else:
         fill = None
 
+    evict_arr: np.memmap[tuple[int], np.dtype[Scalar]] | None
     if prepare_evict:
         if evict_path:
             evict_arr = np.memmap(
@@ -1028,7 +1150,11 @@ def prepare_blocks(
     return blocks, warmup_block, offset, fill, evict_arr
 
 
-def _append_timed_with_calc(buffer, block, func):
+def _append_timed_with_calc(
+    buffer: WriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+    func: Callable[[], Any],
+) -> int:
     val = block.item()
     t0 = perf_counter_ns()
     buffer.append(val)
@@ -1036,45 +1162,64 @@ def _append_timed_with_calc(buffer, block, func):
     return perf_counter_ns() - t0
 
 
-def _append_timed(buffer, block):
+def _append_timed(
+    buffer: WriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+) -> int:
     val = block.item()
     t0 = perf_counter_ns()
     buffer.append(val)
     return perf_counter_ns() - t0
 
 
-def _extend_timed_with_calc(buffer, block, func):
+def _extend_timed_with_calc(
+    buffer: WriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+    func: Callable[[], Any],
+) -> int:
     t0 = perf_counter_ns()
     buffer.extend_unchecked(block)
     func()
     return perf_counter_ns() - t0
 
 
-def _extend_timed(buffer, block):
+def _extend_timed(
+    buffer: WriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+) -> int:
     t0 = perf_counter_ns()
     buffer.extend_unchecked(block)
     return perf_counter_ns() - t0
 
 
-def _read_timed(buffer, _):
+def _read_timed(buffer: ReadWriteBenchmarkBufferProtocol, _: Any) -> int:
     t0 = perf_counter_ns()
     buffer.read()
     return perf_counter_ns() - t0
 
 
-def _read_into_timed(buffer, read_into_arr):
+def _read_into_timed(
+    buffer: ReadWriteBenchmarkBufferProtocol,
+    read_into_arr: np.ndarray[tuple[int], np.dtype[Scalar]],
+) -> int:
     t0 = perf_counter_ns()
     buffer.read_into(read_into_arr)
     return perf_counter_ns() - t0
 
 
-def _write_extend_timed(buffer, block):
+def _write_extend_timed(
+    buffer: ReadWriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+) -> int:
     t0 = perf_counter_ns()
     buffer.write_extend_unchecked(block)
     return perf_counter_ns() - t0
 
 
-def _write_append_timed(buffer, block):
+def _write_append_timed(
+    buffer: ReadWriteBenchmarkBufferProtocol,
+    block: np.ndarray[tuple[int], np.dtype[Scalar]],
+) -> int:
     val = block.item()
     t0 = perf_counter_ns()
     buffer.write_append(val)
@@ -1084,15 +1229,15 @@ def _write_append_timed(buffer, block):
 def raw_bench_with_calc(
     buffer: WriteBenchmarkBufferProtocol,
     func: Callable[[], Any],
-    fill_blocks: np.ndarray,
-    offset_blocks: np.ndarray,
-    warmup_block: np.ndarray,
-    blocks: np.ndarray,
+    fill_blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
+    offset_blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
+    warmup_block: np.ndarray[tuple[int], np.dtype[Scalar]],
+    blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
     calc_every: int,
     n_runs: int,
-    evict_arr: np.ndarray | None,
+    evict_arr: np.ndarray[tuple[int], np.dtype[Scalar]] | None,
     warm_cache: bool = False,
-):
+) -> int:
     """
     Execute a write benchmark that includes a calculation callback every N steps.
 
@@ -1179,7 +1324,9 @@ def raw_bench_with_calc(
         wrap_fill = fill_blocks[:n_wrap_runs]
         nowrap_fill = fill_blocks[n_wrap_runs:]
 
-        def make_calc_mask(length, calc_every):
+        def make_calc_mask(
+            length: int, calc_every: int
+        ) -> np.ndarray[tuple[int], np.dtype[np.bool_]]:
             mask = np.zeros(length, dtype=bool)
             mask[calc_every - 1 :: calc_every] = True
             return mask
@@ -1213,13 +1360,13 @@ def raw_bench_with_calc(
 
 def raw_bench(
     buffer: WriteBenchmarkBufferProtocol,
-    offset_blocks: np.ndarray,
-    warmup_block: np.ndarray,
-    blocks: np.ndarray,
+    offset_blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
+    warmup_block: np.ndarray[tuple[int], np.dtype[Scalar]],
+    blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
     n_runs: int,
-    evict_arr: np.ndarray | None,
+    evict_arr: np.ndarray[tuple[int], np.dtype[Scalar]] | None,
     warm_cache: bool = False,
-):
+) -> int:
     """
     Execute a standard write benchmark for the circular buffer.
 
@@ -1304,14 +1451,14 @@ def raw_bench(
 
 def raw_bench_write_read(
     buffer: ReadWriteBenchmarkBufferProtocol,
-    offset_blocks: np.ndarray,
-    warmup_block: np.ndarray,
-    blocks: np.ndarray,
+    offset_blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
+    warmup_block: np.ndarray[tuple[int], np.dtype[Scalar]],
+    blocks: np.ndarray[tuple[int, int], np.dtype[Scalar]],
     n_runs: int,
-    evict_arr: np.ndarray | None,
+    evict_arr: np.ndarray[tuple[int], np.dtype[Scalar]] | None,
     warm_cache: bool = False,
-    read_into_arr: np.ndarray | None = None,
-):
+    read_into_arr: np.ndarray[tuple[int], np.dtype[Scalar]] | None = None,
+) -> tuple[int, int]:
     """
     Execute a combined write and read benchmark.
 
@@ -1372,7 +1519,9 @@ def raw_bench_write_read(
         write_bench_func = _write_extend_timed
 
     if read_into_arr is None:
-        read_bench_func = _read_timed
+        read_bench_func: Callable[[ReadWriteBenchmarkBufferProtocol, Any], int] = (
+            _read_timed
+        )
     else:
         read_bench_func = _read_into_timed
 
@@ -1438,7 +1587,7 @@ class BenchLogger:
             f.flush()
             os.fsync(f.fileno())
 
-    def log(self, msg: str, to_console: bool = False):
+    def log(self, msg: str, to_console: bool = False) -> None:
         """
         Write a timestamped message to the log file and optionally the console.
 
@@ -1470,16 +1619,16 @@ class RefPythonNumPyCircBuffer:
     to reduce CPU cache index aliasing and conflict misses.
     """
 
-    __slots__ = ["buffer", "write_head", "size", "maxlen", "_raw"]
+    __slots__ = ["_raw", "buffer", "maxlen", "size", "write_head"]
 
     def __init__(
         self,
         maxlen: int,
         return_overwritten_policy: str | None = None,
-        dtype: type[np.floating] | type[np.integer] = np.float32,
+        dtype: type[Scalar] = np.float32,
         *,
         cache_line_size: int | None = None,
-    ):
+    ) -> None:
         """
         Initialize the reference circular buffer.
 
@@ -1515,7 +1664,7 @@ class RefPythonNumPyCircBuffer:
         self.size = 0
         self.maxlen = maxlen
 
-    def append(self, value: float | int) -> None:
+    def append(self, value: float) -> None:
         """
         Add a single value to the buffer, overwriting the oldest data if full.
 
@@ -1536,7 +1685,9 @@ class RefPythonNumPyCircBuffer:
             write_head = 0
         self.write_head = write_head
 
-    def extend_unchecked(self, block_np: np.ndarray) -> None:
+    def extend_unchecked(
+        self, block_np: np.ndarray[tuple[int], np.dtype[Scalar]]
+    ) -> None:
         """
         Add multiple values from a NumPy array to the buffer.
 

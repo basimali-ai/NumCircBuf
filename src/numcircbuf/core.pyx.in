@@ -61,9 +61,6 @@ from libc.math cimport (
     INFINITY,
     isnan,
     isinf,
-    isfinite,
-    fmax,
-    fmaxf,
 )
 from libc.stdint cimport ( 
     uintptr_t,
@@ -97,6 +94,16 @@ cdef extern from "numpy/arrayobject.h":
 
 cdef extern from "<cstring>" namespace "std" nogil:
     void* memcpy(void* dest, const void* src, size_t n) noexcept
+
+cdef extern from "kernels.hpp" namespace "ncb" nogil:
+    bint fast_isfinite(double a) noexcept
+    bint fast_isfinite(float a) noexcept
+
+    double unchecked_max(double a, double b) noexcept
+    float unchecked_max(float a, float b) noexcept
+
+    size_t min_sz(size_t a, size_t b) noexcept
+    size_t get_start_pos(size_t write_head, size_t size, size_t maxlen) noexcept
 
 cdef extern from "kernels.hpp" namespace "ncb::append" nogil:
     bint overwritten_never_append[T](
@@ -216,10 +223,6 @@ cdef object SUPPORTED_DTYPES_ALL_TUPLE = SUPPORTED_DTYPES_FP_TUPLE + (
 )
 
 
-cdef inline size_t min_sz(size_t a, size_t b) noexcept nogil:
-    return a if a < b else b
-
-
 cdef str _format_index(object idx):
     if isinstance(idx, slice):
         start = '' if idx.start is None else idx.start
@@ -255,7 +258,7 @@ cdef str _iter_error_msg():
 cdef void _remove_{{target}}_{{suffix}}(
     _MainBufferProtocolBase self,
     {{c_type}}* ptr,
-    size_t read_pos
+    size_t read_pos,
 ) noexcept nogil:
     cdef:
         size_t write_pos
@@ -271,7 +274,7 @@ cdef void _remove_{{target}}_{{suffix}}(
     {{py: _func_call = 'isnan(val)' if target == ClearTargets.NANS.value else 'isinf(val)'}}
     for i in range(size):
         val = ptr[read_pos]
-        
+
         if not {{_func_call}}:
             if read_pos != write_pos:
                 ptr[write_pos] = val 
@@ -295,27 +298,19 @@ cdef void _remove_{{target}}_{{suffix}}(
 # --- Generated arr_isfinite implementations ---
 {{for suffix, c_type, _, _ in FP_TYPE_DEFINITIONS_EXPANDED}}
 cdef bint arr_isfinite_{{suffix}}(
-    {{c_type}}* ptr,    
+    {{c_type}}* ptr,
     size_t size,
 ) noexcept nogil:
-    cdef size_t i
+    cdef:
+        size_t i
+        bint result = True
     for i in range(size):
-        if not isfinite(ptr[i]):
-            return False
-    return True
+        result &= fast_isfinite(ptr[i])
+    return result
 {{''}}
 {{''}}
 {{endfor}}
 # --------------------------------
-
-
-cdef inline size_t _get_start_pos(
-    size_t write_head, size_t size, size_t maxlen
-) noexcept nogil:
-    if write_head >= size:
-        return write_head - size
-    else:
-        return write_head + maxlen - size
 
 
 cdef class _MainBufferProtocolBase:
@@ -351,7 +346,7 @@ cdef class _InternalCircView:
             Py_ssize_t stop_val, p2_start, stop2
             Py_ssize_t maxlen = <Py_ssize_t> self._maxlen
             Py_ssize_t size = <Py_ssize_t> self._buffer_obj.size
-            Py_ssize_t start_pos = <Py_ssize_t> _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+            Py_ssize_t start_pos = <Py_ssize_t> get_start_pos(self._buffer_obj.write_head, size, maxlen)
 
         if isinstance(idx, slice):
             start, stop, step = idx.indices(size)
@@ -436,7 +431,7 @@ cdef class _InternalCircView:
             # --------------------------------
             size_t maxlen = self._maxlen
             size_t current_size = self._buffer_obj.size
-            size_t current_start_pos = _get_start_pos(self._buffer_obj.write_head, current_size, maxlen)
+            size_t current_start_pos = get_start_pos(self._buffer_obj.write_head, current_size, maxlen)
 
         if current_size == 0: return
 
@@ -479,7 +474,7 @@ cdef class _InternalCircView:
             size_t end
             size_t size = self._buffer_obj.size
             size_t maxlen = self._maxlen
-            size_t start_pos = _get_start_pos(self._buffer_obj.write_head, size, maxlen)
+            size_t start_pos = get_start_pos(self._buffer_obj.write_head, size, maxlen)
 
         if size == 0:
             return self._empty_result
@@ -1078,7 +1073,7 @@ cdef class _OverwriteCircBufferBP(_MainBufferProtocolBase):
             return
 
         with nogil:
-            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            read_pos = get_start_pos(self.write_head, size, self._maxlen)
             # --- Generated c_dtype dispatch ---
             {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
             {{py: suffix, c_type, npy_const, _ = item}}
@@ -1141,7 +1136,7 @@ cdef class _OverwriteCircBufferBPInclMath(_OverwriteCircBufferBP):
 
 {{def shared_start_end_calculation()}}
         # >>> shared_start_end_calculation >>>
-        start = _get_start_pos(self.write_head, size, maxlen)
+        start = get_start_pos(self.write_head, size, maxlen)
         end = start + size
         # <<< shared_start_end_calculation <<<
 {{enddef}}
@@ -1478,7 +1473,7 @@ cdef class OverwriteCircBuffer(_OverwriteCircBufferBPInclMath):
                 (str,),
             )
         elif return_overwritten_policy == POLICY_NEVER:
-            self.overwritten_mode = _MODE_NEVER            
+            self.overwritten_mode = _MODE_NEVER
         elif return_overwritten_policy == POLICY_ALWAYS:
             self.overwritten_mode = _MODE_ALWAYS
         elif return_overwritten_policy == POLICY_CONDITIONAL:
@@ -1736,7 +1731,7 @@ cdef class _UtilityBufferBP(_OverwriteCircBufferBPInclMath):
             return
 
         with nogil:
-            read_pos = _get_start_pos(self.write_head, size, self._maxlen)
+            read_pos = get_start_pos(self.write_head, size, self._maxlen)
             # --- Generated c_dtype dispatch ---
             {{for idx, item in enumerate(FP_TYPE_DEFINITIONS_EXPANDED)}}
             {{py: suffix, c_type, npy_const, _ = item}}
@@ -1805,7 +1800,7 @@ cdef void _shared_utility_buffer_init(
             self.__class__,
             'recalc_threshold',
             type(recalc_threshold),
-            (int, None),
+            (int, type(None)),
         )
     elif recalc_threshold < 0 or recalc_threshold > UINT64_MAX:
         raise exceptions.ConfigurationValueError(
@@ -1933,7 +1928,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
 
             if overwritten:
                 self.sum_sq_accum_{{suffix}} += ({{_value}} * {{_value}}) - (overwritten_{{suffix}} * overwritten_{{suffix}})
-                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                if not self.accum_valid and not fast_isfinite(overwritten_{{suffix}}):
                     self.operations_since_recalc = self.size
             else:
                 self.sum_sq_accum_{{suffix}} += {{_value}} * {{_value}}
@@ -1944,7 +1939,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
                 and self.operations_since_recalc >= self.recalc_threshold
             ):
                 {{recalc_sum_sq_conditional()}}
-                if isfinite(self.sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -1981,7 +1976,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
             {{py: is_f64 = suffix == Suffixes.F64.value}}
             {{'if self.is_double' if is_f64 else 'else'}}:
                 {{recalc_sum_sq_conditional()}}
-                if isfinite(self.sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False                
@@ -2017,7 +2012,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
                 and self.operations_since_recalc >= self.recalc_threshold
             ):
                 {{recalc_sum_sq_conditional()}}
-                if isfinite(self.sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False                
@@ -2029,7 +2024,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
     cdef double mean_square_c(self) noexcept:
         cdef bint should_recalc = False
 
-        if isfinite(self._cached_mean_sq):
+        if fast_isfinite(self._cached_mean_sq):
             return self._cached_mean_sq
 
         if self.is_extend_focused:
@@ -2046,7 +2041,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
         {{'if self.is_double' if is_f64 else 'else'}}:
             if self.accum_valid:
                 if (
-                    (not isfinite(self.sum_sq_accum_{{suffix}}))
+                    (not fast_isfinite(self.sum_sq_accum_{{suffix}}))
                     or (self.sum_sq_accum_{{suffix}} < -ABS_TOL_{{suffix.upper()}})
                 ):
                     should_recalc = True
@@ -2056,7 +2051,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
             if should_recalc:
                 {{recalc_sum_sq_conditional()}}
 
-                if isfinite(self.sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2095,7 +2090,7 @@ self.sum_sq_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             {{recalc_sum_sq_conditional()}}
-            if isfinite(self.sum_sq_accum_{{suffix}}):
+            if fast_isfinite(self.sum_sq_accum_{{suffix}}):
                 self.accum_valid = True
             else:
                 self.accum_valid = False
@@ -2145,7 +2140,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
 
             if overwritten:
                 self.sum_accum_{{suffix}} += {{_value}} - overwritten_{{suffix}}
-                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                if not self.accum_valid and not fast_isfinite(overwritten_{{suffix}}):
                     self.operations_since_recalc = self.size                
             else:
                 self.sum_accum_{{suffix}} += {{_value}}
@@ -2156,7 +2151,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
                 and self.operations_since_recalc >= self.recalc_threshold
             ):
                 {{recalc_sum_conditional()}}
-                if isfinite(self.sum_accum_{{suffix}}):
+                if fast_isfinite(self.sum_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False                
@@ -2193,7 +2188,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
             {{py: is_f64 = suffix == Suffixes.F64.value}}
             {{'if self.is_double' if is_f64 else 'else'}}:
                 {{recalc_sum_conditional()}}
-                if isfinite(self.sum_accum_{{suffix}}):
+                if fast_isfinite(self.sum_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2229,7 +2224,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
                 and self.operations_since_recalc >= self.recalc_threshold
             ):
                 {{recalc_sum_conditional()}}
-                if isfinite(self.sum_accum_{{suffix}}):
+                if fast_isfinite(self.sum_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2241,7 +2236,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
     cdef double mean_c(self) noexcept:
         cdef bint should_recalc = False
         
-        if isfinite(self._cached_mean):
+        if fast_isfinite(self._cached_mean):
             return self._cached_mean
 
         if self.is_extend_focused:
@@ -2257,7 +2252,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             if self.accum_valid:
-                if not isfinite(self.sum_accum_{{suffix}}):
+                if not fast_isfinite(self.sum_accum_{{suffix}}):
                     should_recalc = True
             elif self.operations_since_recalc >= self.size:
                 should_recalc = True
@@ -2265,7 +2260,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
             if should_recalc:
                 {{recalc_sum_conditional()}}
 
-                if isfinite(self.sum_accum_{{suffix}}):
+                if fast_isfinite(self.sum_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2304,7 +2299,7 @@ self.sum_accum_{{suffix}} = {{'<' + c_type + '> ' if not is_f64 else ''}}self.su
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             {{recalc_sum_conditional()}}
-            if isfinite(self.sum_accum_{{suffix}}): 
+            if fast_isfinite(self.sum_accum_{{suffix}}): 
                 self.accum_valid = True
             else:
                 self.accum_valid = False
@@ -2388,7 +2383,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 self.abs_gated_sum_sq_accum_{{suffix}} -= overwritten_{{suffix}}
                 self.abs_gated_count_accum -= 1
 
-                if not self.accum_valid and not isfinite(overwritten_{{suffix}}):
+                if not self.accum_valid and not fast_isfinite(overwritten_{{suffix}}):
                     self.operations_since_recalc = self.size
 
             if {{_value}} > {{_abs_gate_lin_sq}} or isnan({{_value}}):
@@ -2404,7 +2399,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
                 self.abs_gated_count_accum = result_{{suffix}}.count
 
-                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2453,7 +2448,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
                 self.abs_gated_count_accum = result_{{suffix}}.count
 
-                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2507,7 +2502,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
                 self.abs_gated_count_accum = result_{{suffix}}.count
 
-                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
@@ -2542,7 +2537,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
             # --------------------------------
             bint should_recalc = False
 
-        if isfinite(self._cached_gated_mean_sq):
+        if fast_isfinite(self._cached_gated_mean_sq):
             return self._cached_gated_mean_sq
 
         if not self.abs_gated_count_accum:
@@ -2554,11 +2549,10 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
         {{py: is_f64 = suffix == Suffixes.F64.value}}
         {{py: _abs_gate_lin_sq = 'self.abs_gate_lin_sq' if is_f64 else '<' + c_type + '>self.abs_gate_lin_sq'}}
         {{py: _rel_gate_lin_sq_factor = 'self.rel_gate_lin_sq_factor' if is_f64 else '<' + c_type + '>self.rel_gate_lin_sq_factor'}}
-        {{py: _max_func = 'fmaxf' if suffix == Suffixes.F32.value else 'fmax'}}
         {{'if self.is_double' if is_f64 else 'else'}}:
             if self.accum_valid:
                 if (
-                    (not isfinite(self.abs_gated_sum_sq_accum_{{suffix}}))
+                    (not fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}))
                     or (self.abs_gated_sum_sq_accum_{{suffix}} < -ABS_TOL_{{suffix.upper()}})
                 ):
                     should_recalc = True
@@ -2570,19 +2564,19 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
                 self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
                 self.abs_gated_count_accum = result_{{suffix}}.count
 
-                if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+                if fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                     self.accum_valid = True
                 else:
                     self.accum_valid = False
                     
                 self.operations_since_recalc = 0
 
-            if not isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+            if not fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                 self._cached_gated_mean_sq = self.abs_gated_sum_sq_accum_{{suffix}}
                 return self._cached_gated_mean_sq
 
             result_{{suffix}} = self.sum_and_count_gt_{{suffix}}(
-                {{_max_func}}(
+                unchecked_max(
                     {{_abs_gate_lin_sq}},
                     (self.abs_gated_sum_sq_accum_{{suffix}} / self.abs_gated_count_accum) * {{_rel_gate_lin_sq_factor}}
                 )
@@ -2638,7 +2632,7 @@ cdef class IntegratedGatedBuffer(_UtilityBufferBP):
             result_{{suffix}} = self.sum_and_count_gt_{{suffix}}({{_abs_gate_lin_sq}})
             self.abs_gated_sum_sq_accum_{{suffix}} = result_{{suffix}}.sum
             self.abs_gated_count_accum = result_{{suffix}}.count
-            if isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
+            if fast_isfinite(self.abs_gated_sum_sq_accum_{{suffix}}):
                 self.accum_valid = True
             else:
                 self.accum_valid = False            

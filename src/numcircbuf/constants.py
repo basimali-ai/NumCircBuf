@@ -20,9 +20,9 @@ NumPy-compatible data types. Includes typical architecture-standard
 constants, such as common cache line and memory page sizes.
 """
 
-from enum import IntEnum, Enum
 import ctypes
 import sys
+from enum import Enum, IntEnum
 
 import numpy as np
 

@@ -12,44 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import os
-from typing import Type, Literal
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from numcircbuf import RunningMeanBuffer, RunningMeanSqBuffer
-from numcircbuf.system_info import get_available_ram
+from numcircbuf._typing import ConcreteFloating
 from numcircbuf.bench_utils import (
-    temporary_benchmark_data,
-    raw_bench_with_calc,
     BenchLogger,
+    determine_num_runs,
     get_cpu_name,
     prepare_blocks,
-    determine_num_runs,
+    raw_bench_with_calc,
+    temporary_benchmark_data,
 )
+from numcircbuf.system_info import get_available_ram
 
 NUM_THREADS = 1
 GIB_SAFETY_BUFFER = 2
-TOTAL_BYTE_LIMIT = max(0, get_available_ram() - (GIB_SAFETY_BUFFER * (1024**3)))
+
+available_ram = get_available_ram()
+assert available_ram is not None
+
+TOTAL_BYTE_LIMIT = max(0, available_ram - (GIB_SAFETY_BUFFER * (1024**3)))
 
 
 def _run_variant(
-    buffer_class: Type[RunningMeanBuffer] | Type[RunningMeanSqBuffer],
+    buffer_class: type[RunningMeanBuffer[Any]] | type[RunningMeanSqBuffer[Any]],
     operation_focus: Literal["extend/append", "calculation"],
     maxlen: int,
-    dtype: type,
+    dtype: type[ConcreteFloating],
     block_size: int,
     n_runs: int,
     calc_every: int,
     data_path: str,
     data_shape: tuple[int, int],
     warmup_path: str,
-    warmup_data_shape: tuple[int, int],
+    warmup_data_shape: tuple[int],
     offset_path: str,
     offset_data_shape: tuple[int, int],
     fill_path: str,
@@ -85,7 +90,7 @@ def _run_variant(
     t = raw_bench_with_calc(
         buffer,
         func,
-        fill_blocks,
+        fill_blocks,  # type: ignore[arg-type]
         offset_blocks,
         warmup_block,
         blocks,
@@ -97,7 +102,7 @@ def _run_variant(
     return buffer_class.__name__, t
 
 
-def benchmark_and_save(dtype: type):
+def benchmark_and_save(dtype: type[ConcreteFloating]):
     start = time.time()
     py_file_name = os.path.splitext(os.path.basename(__file__))[0]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -147,7 +152,7 @@ def benchmark_and_save(dtype: type):
         8_388_608,
     )
     CALC_EVERY = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64)
-    VARIANTS: tuple[Type[RunningMeanBuffer] | Type[RunningMeanSqBuffer], ...] = (
+    VARIANTS: tuple[type[RunningMeanBuffer | RunningMeanSqBuffer], ...] = (
         RunningMeanBuffer,
         RunningMeanSqBuffer,
     )
@@ -209,6 +214,7 @@ def benchmark_and_save(dtype: type):
         evict_path,
         _,
     ):
+        assert offset_data is not None and fill_data is not None
         total = len(combo_indices)
         bench_logger.log(f"Total tasks: {total}")
         bench_logger.log("Creating ProcessPoolExecutor...")
@@ -275,9 +281,7 @@ def benchmark_and_save(dtype: type):
                 # Check for any errors/completed futures while submitting
                 if idx % 100:
                     done_futures = [
-                        f
-                        for f in futures.keys()
-                        if f.done() and f not in completed_futures
+                        f for f in futures if f.done() and f not in completed_futures
                     ]
                     for done_fut in done_futures:
                         (
@@ -319,7 +323,7 @@ def benchmark_and_save(dtype: type):
             )
 
             # Collect any remaining completions
-            remaining = [f for f in futures.keys() if f not in completed_futures]
+            remaining = [f for f in futures if f not in completed_futures]
             bench_logger.log(f"Waiting for {len(remaining)} remaining tasks...")
 
             for i, future in enumerate(as_completed(remaining), 1):

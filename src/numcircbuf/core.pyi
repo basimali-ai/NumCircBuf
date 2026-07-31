@@ -21,15 +21,16 @@ numerical data ingestion and provides O(1) complexity for rolling
 statistical calculations.
 """
 
-from __future__ import annotations
-from typing import Iterable, Literal
+from collections.abc import Iterable
+from typing import Any, Generic, Literal, overload
 
 import numpy as np
 
+from ._typing import ConcreteFloatingT, ConcreteScalarT
 from .constants import Limits
 from .protocols import ViewProtocol
 
-class BlockingCircBuffer:
+class BlockingCircBuffer(Generic[ConcreteScalarT]):
     """
     Blocking multi-producer, multi-consumer (MPMC) circular buffer,
     suitable for multi-threaded applications.
@@ -57,18 +58,8 @@ class BlockingCircBuffer:
     guarantees under standard operating conditions.
     """
 
-    def __init__(
-        self,
-        maxlen: int,
-        dtype: (
-            type[np.float32]
-            | type[np.float64]
-            | type[np.int32]
-            | type[np.int64]
-            | type[np.uint32]
-            | type[np.uint64]
-        ) = np.float64,
-    ) -> None:
+    @overload
+    def __init__(self: BlockingCircBuffer[np.float64], maxlen: int) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
         :type maxlen: int
@@ -83,7 +74,9 @@ class BlockingCircBuffer:
             | type[np.uint64]
         ) = np.float64
         """
-
+    @overload
+    def __init__(self, maxlen: int, dtype: type[ConcreteScalarT]) -> None: ...
+    # ---
     def write_append(self, value: float | int, timeout: float = -1) -> bool:
         """
         Writes a single value to the buffer.
@@ -141,7 +134,7 @@ class BlockingCircBuffer:
 
     def write_extend_unchecked(
         self,
-        data: np.ndarray,
+        data: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
         timeout: float = -1,
         warn_size: bool = True,
     ) -> bool:
@@ -181,7 +174,7 @@ class BlockingCircBuffer:
         n: int = Limits.SIZE_MAX.value,
         timeout: float = -1,
         partial_read: bool = True,
-    ) -> np.ndarray:
+    ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT]]:
         """
         Reads data from the buffer into a new NumPy array.
 
@@ -216,7 +209,7 @@ class BlockingCircBuffer:
 
     def read_into(
         self,
-        out_array_np: np.ndarray,
+        out_array_np: np.ndarray[tuple[int], np.dtype[Any]],
         timeout: float = -1,
         partial_read: bool = True,
     ) -> int:
@@ -256,7 +249,7 @@ class BlockingCircBuffer:
 
     def read_into_unchecked(
         self,
-        out_array_np: np.ndarray,
+        out_array_np: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
         timeout: float = -1,
         partial_read: bool = True,
     ) -> int:
@@ -290,7 +283,7 @@ class BlockingCircBuffer:
         :rtype: int
         """
 
-    def view(self) -> ViewProtocol:
+    def view(self) -> ViewProtocol[ConcreteScalarT]:
         """
         Returns a live View of the buffer. Using this does not remove any data.
 
@@ -309,7 +302,7 @@ class BlockingCircBuffer:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteScalarT]:
         """Returns the dtype of the buffer."""
 
     def clear(self) -> None:
@@ -321,7 +314,7 @@ class BlockingCircBuffer:
     def clear_infs(self) -> None:
         """Removes infinite (Inf) values from the buffer."""
 
-class OverwriteCircBuffer:
+class OverwriteCircBuffer(Generic[ConcreteScalarT]):
     """
     Write-optimized circular buffer with auto-overwrite
     and non-destructive live view reads.
@@ -339,18 +332,11 @@ class OverwriteCircBuffer:
 
     """
 
+    @overload
     def __init__(
-        self,
+        self: OverwriteCircBuffer[np.float64],
         maxlen: int,
         return_overwritten_policy: Literal["never", "always", "conditional"],
-        dtype: (
-            type[np.float32]
-            | type[np.float64]
-            | type[np.int32]
-            | type[np.int64]
-            | type[np.uint32]
-            | type[np.uint64]
-        ) = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -390,10 +376,17 @@ class OverwriteCircBuffer:
             | type[np.uint64]
         ) = np.float64
         """
-
+    @overload
+    def __init__(
+        self,
+        maxlen: int,
+        return_overwritten_policy: Literal["never", "always", "conditional"],
+        dtype: type[ConcreteScalarT],
+    ) -> None: ...
+    # ---
     def append(
         self, value: float | int, return_overwritten: bool = False
-    ) -> float | None:
+    ) -> float | int | None:
         """
         Appends a value, returning the overwritten value if the buffer
         was full, depending on your selected policy.
@@ -417,7 +410,7 @@ class OverwriteCircBuffer:
         block: Iterable[float | int],
         return_overwritten: bool = False,
         warn_size: bool = True,
-    ) -> np.ndarray:
+    ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT]]:
         """
         Extends the buffer with a block of data, returning an array of
         any values that were overwritten or an empty array.
@@ -445,10 +438,10 @@ class OverwriteCircBuffer:
 
     def extend_unchecked(
         self,
-        block_np: np.ndarray,
+        block_np: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
         return_overwritten: bool = False,
         warn_size: bool = True,
-    ) -> np.ndarray:
+    ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT]]:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer, returning an array of
@@ -479,7 +472,7 @@ class OverwriteCircBuffer:
         :rtype: ndarray[_AnyShape, dtype[Any]]
         """
 
-    def view(self) -> ViewProtocol:
+    def view(self) -> ViewProtocol[ConcreteScalarT]:
         """Returns a read-only, zero-copy live view of the buffer in logical order."""
 
     def __len__(self) -> int:
@@ -490,47 +483,82 @@ class OverwriteCircBuffer:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteScalarT]:
         """Returns the dtype of the buffer."""
 
-    def sum_squares(self) -> float:
+    @overload
+    def sum_squares(self: OverwriteCircBuffer[np.float64]) -> float:
         """
         Calculates sum of squares (x^2).
 
         **Note:** Only supported for floating-point buffers.
         """
-
-    def mean_squares(self) -> float:
+    @overload
+    def sum_squares(self: OverwriteCircBuffer[np.float32]) -> float: ...
+    # ---
+    @overload
+    def mean_squares(self: OverwriteCircBuffer[np.float64]) -> float:
         """
         Calculates mean of squares (x^2).
 
         **Note:** Only supported for floating-point buffers.
         """
-
-    def sum(self) -> float:
+    @overload
+    def mean_squares(self: OverwriteCircBuffer[np.float32]) -> float: ...
+    # ---
+    @overload
+    def sum(self: OverwriteCircBuffer[np.float64]) -> float:
         """
         Calculates the sum of all elements.
 
         **Note:** Not supported for `int64` and `uint64` due to the risk
         of overflow.
         """
-
-    def mean(self) -> float:
+    @overload
+    def sum(self: OverwriteCircBuffer[np.float32]) -> float: ...
+    @overload
+    def sum(self: OverwriteCircBuffer[np.int32]) -> int: ...
+    @overload
+    def sum(self: OverwriteCircBuffer[np.uint32]) -> int: ...
+    # ---
+    @overload
+    def mean(self: OverwriteCircBuffer[np.float64]) -> float:
         """
         Calculates the mean of all elements.
 
         **Note:** Not supported for `int64` and `uint64` due to the risk
         of overflow.
         """
-
-    def sum_and_count_gt(self, threshold: float | int) -> tuple[float | int, int]:
+    @overload
+    def mean(self: OverwriteCircBuffer[np.float32]) -> float: ...
+    @overload
+    def mean(self: OverwriteCircBuffer[np.int32]) -> int: ...
+    @overload
+    def mean(self: OverwriteCircBuffer[np.uint32]) -> int: ...
+    # ---
+    @overload
+    def sum_and_count_gt(
+        self: OverwriteCircBuffer[np.float64], threshold: float
+    ) -> tuple[float, int]:
         """
         Calculates sum and count of values greater than `threshold`.
 
         **Note:** Not supported for `int64` and `uint64` due to the risk
         of overflow.
         """
-
+    @overload
+    def sum_and_count_gt(
+        self: OverwriteCircBuffer[np.float32], threshold: float
+    ) -> tuple[float, int]: ...
+    @overload
+    def sum_and_count_gt(
+        self: OverwriteCircBuffer[np.int32], threshold: int
+    ) -> tuple[int, int]: ...
+    @overload
+    def sum_and_count_gt(
+        self: OverwriteCircBuffer[np.uint32], threshold: int
+    ) -> tuple[int, int]: ...
+    # ---
     def clear(self) -> None:
         """Clears all data from the buffer."""
 
@@ -540,7 +568,7 @@ class OverwriteCircBuffer:
     def clear_infs(self) -> None:
         """Removes infinite (Inf) values from the buffer."""
 
-class RunningMeanSqBuffer:
+class RunningMeanSqBuffer(Generic[ConcreteFloatingT]):
     """
     Accumulator-capable circular buffer optimized for mean-square calculations.
 
@@ -553,12 +581,13 @@ class RunningMeanSqBuffer:
     - Concurrent writes can cause data corruption.
     """
 
+    @overload
     def __init__(
-        self,
+        self: RunningMeanSqBuffer[np.float64],
         maxlen: int,
         operation_focus: Literal["extend/append", "calculation"],
+        *,
         recalc_threshold: int | None = 0,
-        dtype: type[np.float32] | type[np.float64] = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -579,16 +608,24 @@ class RunningMeanSqBuffer:
             and returns the appropriate Literal value.
         :type operation_focus: Literal["extend/append", "calculation"]
 
+        :param dtype: NumPy dtype to use for the buffer.
+        :type dtype: type[np.float32] | type[np.float64] = np.float64
+
         :param recalc_threshold:
             Recalculate the sum from scratch every
             N operations to prevent float precision drift.
             0 means no threshold/off.
         :type recalc_threshold: Optional[int]
-
-        :param dtype: NumPy dtype to use for the buffer.
-        :type dtype: type[np.float32] | type[np.float64] = np.float64
         """
-
+    @overload
+    def __init__(
+        self,
+        maxlen: int,
+        operation_focus: Literal["extend/append", "calculation"],
+        dtype: type[ConcreteFloatingT],
+        recalc_threshold: int | None = 0,
+    ) -> None: ...
+    # ---
     def clear_cache(self) -> None:
         """Clears the cached mean_square value."""
 
@@ -619,7 +656,11 @@ class RunningMeanSqBuffer:
         :type warn_size: bool
         """
 
-    def extend_unchecked(self, block_np: np.ndarray, warn_size: bool = True) -> None:
+    def extend_unchecked(
+        self,
+        block_np: np.ndarray[tuple[int], np.dtype[ConcreteFloatingT]],
+        warn_size: bool = True,
+    ) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -660,13 +701,13 @@ class RunningMeanSqBuffer:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteFloatingT]:
         """Returns the dtype of the buffer."""
 
-    def view(self) -> ViewProtocol:
+    def view(self) -> ViewProtocol[ConcreteFloatingT]:
         """Returns a read-only, zero-copy live view of the buffer in logical order."""
 
-class RunningMeanBuffer:
+class RunningMeanBuffer(Generic[ConcreteFloatingT]):
     """
     Accumulator-capable circular buffer optimized for mean calculations.
 
@@ -679,11 +720,13 @@ class RunningMeanBuffer:
     - Concurrent writes can cause data corruption.
     """
 
+    @overload
     def __init__(
-        self,
+        self: RunningMeanBuffer[np.float64],
         maxlen: int,
         operation_focus: Literal["extend/append", "calculation"],
-        dtype: type[np.float32] | type[np.float64] = np.float64,
+        *,
+        recalc_threshold: int | None = 0,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -706,8 +749,22 @@ class RunningMeanBuffer:
 
         :param dtype: NumPy dtype to use for the buffer.
         :type dtype: type[np.float32] | type[np.float64] = np.float64
-        """
 
+        :param recalc_threshold:
+            Recalculate the sum from scratch every
+            N operations to prevent float precision drift.
+            0 means no threshold/off.
+        :type recalc_threshold: Optional[int]
+        """
+    @overload
+    def __init__(
+        self,
+        maxlen: int,
+        operation_focus: Literal["extend/append", "calculation"],
+        dtype: type[ConcreteFloatingT],
+        recalc_threshold: int | None = 0,
+    ) -> None: ...
+    # ---
     def clear_cache(self) -> None:
         """Clears the cached mean value."""
 
@@ -737,7 +794,11 @@ class RunningMeanBuffer:
         :type warn_size: bool
         """
 
-    def extend_unchecked(self, block_np: np.ndarray, warn_size: bool = True) -> None:
+    def extend_unchecked(
+        self,
+        block_np: np.ndarray[tuple[int], np.dtype[ConcreteFloatingT]],
+        warn_size: bool = True,
+    ) -> None:
         """
         Fast extends the buffer with a 1-D C-Contiguous NumPy Array
         of the same dtype as the buffer.
@@ -778,16 +839,13 @@ class RunningMeanBuffer:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteFloatingT]:
         """Returns the dtype of the buffer."""
 
-    def view(self) -> ViewProtocol:
+    def view(self) -> ViewProtocol[ConcreteFloatingT]:
         """Returns a read-only, zero-copy live view of the buffer in logical order."""
 
-    def __repr__(self) -> str:
-        """Returns a string representation with the mean value."""
-
-class IntegratedGatedBuffer:
+class IntegratedGatedBuffer(Generic[ConcreteFloatingT]):
     """
     A specialized circular buffer for calculating gated loudness.
 
@@ -806,13 +864,14 @@ class IntegratedGatedBuffer:
     - Concurrent writes can cause data corruption.
     """
 
+    @overload
     def __init__(
-        self,
+        self: IntegratedGatedBuffer[np.float64],
         maxlen: int,
         abs_gate_lufs: float,
         rel_gate_lu: float,
+        *,
         recalc_threshold: int | None = 0,
-        dtype: type[np.float32] | type[np.float64] = np.float64,
     ) -> None:
         """
         :param maxlen: Maximum capacity of the buffer.
@@ -833,17 +892,26 @@ class IntegratedGatedBuffer:
             loudness calculation.
         :type rel_gate_lu: float
 
+        :param dtype: NumPy dtype to use for the buffer.
+        :type dtype: type[np.float32] | type[np.float64] = np.float64
+
         :param recalc_threshold:
             Recalculate the sum from scratch every
             N operations to prevent float precision drift.
 
             0 means no threshold/off.
         :type recalc_threshold: Optional[int]
-
-        :param dtype: NumPy dtype to use for the buffer.
-        :type dtype: type[np.float32] | type[np.float64] = np.float64
         """
-
+    @overload
+    def __init__(
+        self,
+        maxlen: int,
+        abs_gate_lufs: float,
+        rel_gate_lu: float,
+        dtype: type[ConcreteFloatingT],
+        recalc_threshold: int | None = 0,
+    ) -> None: ...
+    # ---
     def clear_cache(self) -> None:
         """Clears the cached gated-mean-sq value."""
 
@@ -895,7 +963,7 @@ class IntegratedGatedBuffer:
 
     def extend_unchecked(
         self,
-        block_np: np.ndarray,
+        block_np: np.ndarray[tuple[int], np.dtype[ConcreteFloatingT]],
         warn_size: bool = True,
         already_squared: bool = False,
     ) -> None:
@@ -952,8 +1020,8 @@ class IntegratedGatedBuffer:
         """Returns the maximum capacity of the buffer."""
 
     @property
-    def dtype(self) -> type[np.generic]:
+    def dtype(self) -> type[ConcreteFloatingT]:
         """Returns the dtype of the buffer."""
 
-    def view(self) -> ViewProtocol:
+    def view(self) -> ViewProtocol[ConcreteFloatingT]:
         """Returns a read-only, zero-copy live view of the buffer in logical order."""

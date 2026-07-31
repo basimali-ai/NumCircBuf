@@ -35,18 +35,19 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.cibuildwheel]
-test-requires = ["pytest", "pytest-mock", "numpy", "cython"]
+test-requires = ["pytest", "pytest-mock", "numpy<3.0.0", "cython"]
 before-test = [
-    "pip install setuptools numpy cython",
-    "ONLY_TEST_API=1 python setup.py build_ext --inplace"
+    'pip install setuptools "numpy<3.0.0" cython',
+    'ONLY_TEST_API=1 python setup.py build_ext --inplace'
 ]
 test-command = "PYTHONPATH={project}/src/numcircbuf pytest {project}/tests"
 
 [[tool.cibuildwheel.overrides]]
 select = "*-win*"
+test-requires = ["pytest", "pytest-mock", "numpy^<3.0.0", "cython"]
 before-test = [
-    "pip install setuptools numpy cython",
-    "set ONLY_TEST_API=1&& python setup.py build_ext --inplace"
+    'pip install setuptools "numpy<3.0.0" cython',
+    'set ONLY_TEST_API=1&& python setup.py build_ext --inplace'
 ]
 test-command = "set PYTHONPATH={project}/src/numcircbuf&& pytest {project}/tests"
 
@@ -55,10 +56,27 @@ python_version = "3.11"
 files = "numcircbuf"
 exclude = ".*\\.pyx|.*\\.pxd"
 ignore_missing_imports = true
-strict_optional = true
-warn_no_return = true
-warn_unused_ignores = true
+strict = true
 follow_imports = "silent"
+untyped_calls_exclude = ["Cython"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "perf.*"]
+strict = false
+disallow_untyped_calls = false
+disable_error_code = [
+    "call-overload",
+    "var-annotated",
+    "type-arg",
+    "no-untyped-def"
+]
+
+[tool.ruff.lint]
+ignore = ["DTZ005", "PYI041", "UP007"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["BLE001"]
+"perf/**/*.py" = ["BLE001"]
 
 [tool.pytest.ini_options]
 python_files = "test_*.py"

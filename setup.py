@@ -14,13 +14,15 @@
 
 import os
 import sys
+import sysconfig
 from pathlib import Path
+from typing import Any
 
-from setuptools import setup, Extension, find_packages
-from setuptools.command.build_py import build_py
-from Cython.Build import cythonize
 import Cython.Tempita as tempita
 import numpy as np
+from Cython.Build import cythonize
+from setuptools import Extension, setup
+from setuptools.command.build_py import build_py
 
 src_dir = Path("src/numcircbuf")
 core_file_name = "core"
@@ -36,12 +38,12 @@ only_test_api = os.getenv("ONLY_TEST_API", "0") == "1"
 is_test = only_test_api or test_build or debug_build or coverage_build
 
 
-class FilteredBuildPy(build_py):
+class FilteredBuildPy(build_py):  # type: ignore[misc]
     """Intercept the Python module discovery and remove targeted modules."""
 
     _filtered_build_py_excluded_modules = ("_build_helpers",)
 
-    def find_package_modules(self, package, package_dir):
+    def find_package_modules(self, package: Any, package_dir: Any) -> Any:
         modules = super().find_package_modules(package, package_dir)
         filtered_modules = [
             (pkg, mod, filepath)
@@ -85,22 +87,28 @@ def process_tempita(file_path: Path) -> Path:
     return out_file
 
 
+extra_compile_args: list[str] = []
 extra_link_args: list[str] = []
-if sys.platform == "win32":  # MSVC optimization
-    if debug_build or coverage_build:  # No optimization, debug_build symbols
-        extra_compile_args = ["/Od", "/Z7"]
+
+if sys.platform == "win32":  # MSVC
+    extra_compile_args.append("/std:c++20")
+
+    if debug_build or coverage_build:
+        extra_compile_args.extend(["/Od", "/Z7"])
     else:
-        extra_compile_args = ["/O2"]
+        extra_compile_args.append("/O2")
 
     if save_asm:
         extra_compile_args.append("/FAs")
 
-else:  # GCC/Clang optimization
+else:  # GCC/Clang
     if debug_build or coverage_build:
-        extra_compile_args = ["-O0", "-g"]
-        extra_link_args = ["-g"]
+        extra_compile_args.extend(["-O0", "-g"])
+        extra_link_args.append("-g")
     else:
-        extra_compile_args = ["-O3"]
+        extra_compile_args.append("-O3")
+        if sys.platform == "linux":
+            extra_link_args.append("-s")
 
     if save_asm:
         extra_compile_args.extend(["-save-temps", "-fverbose-asm"])
@@ -110,11 +118,12 @@ compiler_directives = {
     "linetrace": coverage_build,
     "binding": coverage_build,
 }
-define_macros: list[tuple[str, str]] = []
+
+define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 if coverage_build:
     define_macros.extend([("CYTHON_TRACE", "1"), ("CYTHON_TRACE_NOGIL", "1")])
 
-extensions = []
+extensions: list[Extension] = []
 exclude_pkg_data = ["core.cpp", "_test_cython_api.cpp"]
 
 if not only_test_api:
@@ -150,11 +159,20 @@ if is_test:
 else:
     exclude_pkg_data.append("_test_cython_api.pyx")
 
+if not (debug_build or coverage_build):
+    cfg_vars = sysconfig.get_config_vars()
+    for key in ("CFLAGS", "CXXFLAGS", "OPT"):
+        if key in cfg_vars and isinstance(cfg_vars[key], str):
+            val = " " + cfg_vars[key] + " "
+            for g_flag in (" -g ", " -g1 ", " -g2 ", " -g3 "):
+                val = val.replace(g_flag, " ")
+            cfg_vars[key] = val.strip()
+
 setup(
     name="NumCircBuf",
     version="1.1.2",
     description="High-performance numerical circular buffers for Python, featuring O(1) statistical accumulators.",
-    long_description=open("README.md", encoding="utf-8").read(),
+    long_description=Path("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     author="Syed Basim Ali",
     author_email="basim.ali.contact@gmail.com",
@@ -188,9 +206,8 @@ setup(
     cmdclass={
         "build_py": FilteredBuildPy,
     },
-    packages=find_packages(),
     package_data={
-        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx", ".hpp"],
+        "numcircbuf": ["*.pyi", "*.pxd", "*.pyx", "*.hpp", "py.typed"],
     },
     exclude_package_data={
         "numcircbuf": exclude_pkg_data,

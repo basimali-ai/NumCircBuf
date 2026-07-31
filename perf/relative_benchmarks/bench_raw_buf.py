@@ -12,43 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import os
-from typing import Type
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from numcircbuf import OverwriteCircBuffer
-from numcircbuf.system_info import get_available_ram
+from numcircbuf._typing import ConcreteScalar
 from numcircbuf.bench_utils import (
-    RefPythonNumPyCircBuffer,
-    raw_bench,
     BenchLogger,
-    temporary_benchmark_data,
+    RefPythonNumPyCircBuffer,
+    determine_num_runs,
     get_cpu_name,
     prepare_blocks,
-    determine_num_runs,
+    raw_bench,
+    temporary_benchmark_data,
 )
+from numcircbuf.system_info import get_available_ram
 
 NUM_THREADS = 1
 GIB_SAFETY_BUFFER = 2
-TOTAL_BYTE_LIMIT = max(0, (get_available_ram()) - (GIB_SAFETY_BUFFER * (1024**3)))
+
+available_ram = get_available_ram()
+assert available_ram is not None
+
+TOTAL_BYTE_LIMIT = max(0, available_ram - (GIB_SAFETY_BUFFER * (1024**3)))
 
 
 def _run_variant(
-    buffer_class: Type[OverwriteCircBuffer] | Type[RefPythonNumPyCircBuffer],
+    buffer_class: type[OverwriteCircBuffer[Any]] | type[RefPythonNumPyCircBuffer],
     block_size: int,
     maxlen: int,
-    dtype: type,
+    dtype: type[ConcreteScalar],
     n_runs: int,
     data_path: str,
     data_shape: tuple[int, int],
     warmup_path: str,
-    warmup_data_shape: tuple[int, int],
+    warmup_data_shape: tuple[int],
     offset_path: str,
     offset_data_shape: tuple[int, int],
     evict_path: str,
@@ -77,7 +82,7 @@ def _run_variant(
     return buffer_class.__name__, t
 
 
-def benchmark_and_save(dtype: type):
+def benchmark_and_save(dtype: type[ConcreteScalar]):
     start = time.time()
     py_file_name = os.path.splitext(os.path.basename(__file__))[0]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -128,7 +133,7 @@ def benchmark_and_save(dtype: type):
         262_144,
         524_288,
     )
-    VARIANTS: tuple[Type[OverwriteCircBuffer] | Type[RefPythonNumPyCircBuffer], ...] = (
+    VARIANTS: tuple[type[OverwriteCircBuffer | RefPythonNumPyCircBuffer], ...] = (
         RefPythonNumPyCircBuffer,
         OverwriteCircBuffer,
     )
@@ -181,6 +186,7 @@ def benchmark_and_save(dtype: type):
         evict_path,
         _,
     ):
+        assert offset_data is not None
         total = len(combo_indices)
         bench_logger.log(f"Total tasks: {total}")
         bench_logger.log("Creating ProcessPoolExecutor...")
@@ -232,7 +238,7 @@ def benchmark_and_save(dtype: type):
 
                 # Check for any errors/completed futures while submitting
                 done_futures = [
-                    f for f in futures.keys() if f.done() and f not in completed_futures
+                    f for f in futures if f.done() and f not in completed_futures
                 ]
                 for done_fut in done_futures:
                     size, maxlen, n_runs = futures[done_fut]
@@ -258,7 +264,7 @@ def benchmark_and_save(dtype: type):
             )
 
             # Collect any remaining completions
-            remaining = [f for f in futures.keys() if f not in completed_futures]
+            remaining = [f for f in futures if f not in completed_futures]
             bench_logger.log(f"Waiting for {len(remaining)} remaining tasks...")
 
             for i, future in enumerate(as_completed(remaining), 1):

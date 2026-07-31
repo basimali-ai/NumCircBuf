@@ -13,18 +13,22 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Dict, Tuple, List
+from collections.abc import Iterator
+from typing import Any
+
 import numpy as np
+
 from numcircbuf import (
-    RunningMeanSqBuffer,
-    RunningMeanBuffer,
     IntegratedGatedBuffer,
+    RunningMeanBuffer,
+    RunningMeanSqBuffer,
     determine_operation_focus,
 )
+from numcircbuf._typing import ConcreteFloating
 from numcircbuf.bench_utils import (
+    determine_num_runs,
     raw_bench_with_calc,
     temporary_benchmark_data,
-    determine_num_runs,
 )
 
 TOTAL_GiB_LIMIT = 0.1
@@ -43,25 +47,28 @@ BLOCK_SIZES = (4096, 8192, 16_384, 32_768, 65_536)
 
 
 def _run_benchmark(
-    buffer_class: type[RunningMeanSqBuffer]
-    | type[RunningMeanBuffer]
-    | type[IntegratedGatedBuffer],
+    buffer_class: type[RunningMeanSqBuffer[Any]]
+    | type[RunningMeanBuffer[Any]]
+    | type[IntegratedGatedBuffer[Any]],
     func_name: str,
-    dtype: type,
+    dtype: type[ConcreteFloating],
     maxlen: int,
     block_size: int,
     calc_every: int,
     n_runs: int,
     warm_cache: bool,
-    data,
-    warmup_data,
-    offset_data,
-    fill_data,
-    evict_arr,
-):
+    data: np.ndarray,
+    warmup_data: np.ndarray,
+    offset_data: np.ndarray,
+    fill_data: np.ndarray,
+    evict_arr: np.ndarray | None,
+) -> tuple[float, float]:
     elem_bytes = np.dtype(dtype).itemsize
 
-    if buffer_class in (RunningMeanSqBuffer, RunningMeanBuffer):
+    buffer: (
+        RunningMeanSqBuffer[Any] | RunningMeanBuffer[Any] | IntegratedGatedBuffer[Any]
+    )
+    if issubclass(buffer_class, (RunningMeanSqBuffer, RunningMeanBuffer)):
         buffer = buffer_class(
             maxlen,
             operation_focus=determine_operation_focus(
@@ -71,7 +78,7 @@ def _run_benchmark(
                 block_size=block_size,
                 calc_every=calc_every,
             ),
-            dtype=dtype,
+            dtype=dtype,  # type: ignore[arg-type]
         )
     else:
         buffer = buffer_class(
@@ -106,11 +113,11 @@ def _run_benchmark(
 
 
 def params_for_dtype(
-    dtype: type,
+    dtype: type[ConcreteFloating],
     total_byte_limit: int,
     maxlens: tuple[int, ...],
     block_sizes: tuple[int, ...],
-):
+) -> Iterator[tuple[int, int, int]]:
     """Yield (maxlen, block_size, n_runs) for a given dtype."""
     elem_bytes = np.dtype(dtype).itemsize
     for maxlen in maxlens:
@@ -131,7 +138,12 @@ def print_separator():
     print("-" * 10)
 
 
-def print_summary(warm_cache, dtype, processing_rates, throughputs):
+def print_summary(
+    warm_cache: bool,
+    dtype: type[ConcreteFloating],
+    processing_rates: list,
+    throughputs: list,
+) -> None:
     print(
         f"Warm Cache: {warm_cache}\n"
         f"~{(min(processing_rates) / 1_000_000):.0f}–"
@@ -148,9 +160,9 @@ def main(
     maxlens: tuple[int, ...] = MAXLENS,
     block_sizes: tuple[int, ...] = BLOCK_SIZES,
     calc_every: int = CALC_EVERY,
-):
+) -> None:
     results: defaultdict[
-        str, defaultdict[Tuple[type, bool], Dict[str, List[float]]]
+        str, defaultdict[tuple[type, bool], dict[str, list[float]]]
     ] = defaultdict(lambda: defaultdict(lambda: {"processing": [], "throughput": []}))
     for dtype in DTYPES:
         for maxlen, block_size, n_runs in params_for_dtype(
@@ -176,6 +188,7 @@ def main(
                 _,
                 evict_arr,
             ):
+                assert offset_data is not None and fill_data is not None
                 for warm_cache in (False, True):
                     key = (dtype, warm_cache)
                     for buffer_class, func in BUFFER_METHODS.items():

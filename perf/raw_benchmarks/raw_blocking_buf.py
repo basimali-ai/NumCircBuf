@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import numpy as np
+
 from numcircbuf import BlockingCircBuffer
+from numcircbuf._typing import ConcreteScalar
 from numcircbuf.bench_utils import (
+    determine_num_runs,
     raw_bench_write_read,
     temporary_benchmark_data,
-    determine_num_runs,
 )
 
 DTYPE = np.float64
@@ -31,7 +33,7 @@ TOTAL_BYTE_LIMIT = round(TOTAL_GiB_LIMIT * (1024**3))
 
 
 def _run_benchmark(
-    dtype: type,
+    dtype: type[ConcreteScalar],
     maxlen: int,
     block_size: int,
     n_runs: int,
@@ -39,9 +41,9 @@ def _run_benchmark(
     data: np.ndarray,
     warmup_data: np.ndarray,
     offset_data: np.ndarray,
-    evict_arr: np.ndarray,
+    evict_arr: np.ndarray | None,
     read_into_arr: np.ndarray | None,
-):
+) -> None:
 
     time_ns = raw_bench_write_read(
         BlockingCircBuffer(maxlen, dtype),
@@ -65,12 +67,12 @@ def _run_benchmark(
 
 
 def main(
-    dtype=DTYPE,
-    elem_bytes=ELEM_BYTES,
-    maxlen_byte_limit=MAXLEN_BYTE_LIMIT,
-    block_byte_limit=BLOCK_BYTE_LIMIT,
-    total_byte_limit=TOTAL_BYTE_LIMIT,
-):
+    dtype: type[ConcreteScalar] = DTYPE,
+    elem_bytes: int = ELEM_BYTES,
+    maxlen_byte_limit: int = MAXLEN_BYTE_LIMIT,
+    block_byte_limit: int = BLOCK_BYTE_LIMIT,
+    total_byte_limit: int = TOTAL_BYTE_LIMIT,
+) -> None:
     n_runs, block_size, maxlen = determine_num_runs(
         elem_bytes=elem_bytes,
         maxlen_byte_limit=maxlen_byte_limit,
@@ -98,6 +100,7 @@ def main(
         _,
         evict_arr,
     ):
+        assert offset_data is not None
         for warm_cache in (False, True):
             for read_into in (False, True):
                 _run_benchmark(

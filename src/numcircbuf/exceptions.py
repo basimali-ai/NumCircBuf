@@ -22,6 +22,9 @@ inherit from `NumCircBufWarning`, allowing for granular error handling.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, Literal
+
 from .constants import Limits
 
 # --- Base Classes ---
@@ -30,12 +33,18 @@ from .constants import Limits
 class _NumCircBufBase:
     """Shared base for errors and warnings with structured fields."""
 
-    def __init__(self, *, class_obj=None, obj=None, message=None):
+    def __init__(
+        self,
+        *,
+        class_obj: type | None = None,
+        obj: object | None = None,
+        message: str | None = None,
+    ):
         self.class_obj = class_obj
         self.obj = obj
         self.message = message
         if message is not None:
-            super().__init__(message)
+            super().__init__(message)  # type: ignore[call-arg]
         else:
             super().__init__()
 
@@ -105,12 +114,12 @@ class _NumCircBufDeprecationBase(NumCircBufWarning):
 
     def __init__(
         self,
-        obj,
-        feature,
-        replacement,
-        remove_in_version,
-        message=None,
-    ):
+        obj: object,
+        feature: str,
+        replacement: str,
+        remove_in_version: str | float,
+        message: str | None = None,
+    ) -> None:
         self.feature = feature
         self.replacement = replacement
         self.remove_in_version = remove_in_version
@@ -136,10 +145,10 @@ class BufferCapacityTypeError(BufferCapacityError, NumCircBufTypeError):
 
     def __init__(
         self,
-        class_obj,
-        received_type,
-        message="Buffer capacity/maxlen must be a python integer.",
-    ):
+        class_obj: type,
+        received_type: type,
+        message: str = "Buffer capacity/maxlen must be a python integer.",
+    ) -> None:
         self.received_type = received_type
         self.valid_types = (int,)
         super().__init__(
@@ -154,11 +163,11 @@ class BufferCapacityValueError(BufferCapacityError, NumCircBufValueError):
     def __init__(
         self,
         overflow: bool,
-        class_obj,
-        received_value=None,
+        class_obj: type,
+        received_value: int | str,
         max_maxlen: int = Limits.PY_SSIZE_T_MAX.value,
-        message=None,
-    ):
+        message: str | None = None,
+    ) -> None:
         self.overflow = overflow
         self.received_value = received_value
         self.max_maxlen = max_maxlen
@@ -182,11 +191,11 @@ class DataTypeError(NumCircBufInitError, NumCircBufValueError, NumCircBufTypeErr
 
     def __init__(
         self,
-        class_obj,
-        received_value,
-        valid_values,
-        message="Unsupported data type.",
-    ):
+        class_obj: type,
+        received_value: Any,
+        valid_values: tuple[type, ...],
+        message: str = "Unsupported data type.",
+    ) -> None:
         self.class_obj = class_obj
         self.received_value = received_value
         self.valid_values = valid_values
@@ -205,25 +214,21 @@ class ConfigurationTypeError(ConfigurationError, NumCircBufTypeError):
 
     def __init__(
         self,
-        class_obj,
-        parameter,
-        received_type,
-        valid_types,
-        message="Invalid configuration parameter.",
-    ):
+        class_obj: type,
+        parameter: str,
+        received_type: type,
+        valid_types: tuple[type, ...],
+        message: str = "Invalid configuration parameter.",
+    ) -> None:
         self.parameter = parameter
         self.received_type = received_type
         self.valid_types = valid_types
-
-        if len(valid_types) == 1:
-            valid_types = valid_types[0]
-
         super().__init__(
             class_obj=class_obj,
             message=(
                 f"\n{class_obj.__name__}:\n{message}\n"
                 f"Parameter:   {parameter}\n"
-                f"Valid types: {valid_types}\n"
+                f"Valid types: {valid_types[0] if len(valid_types) == 1 else valid_types}\n"
                 f"Got:         {received_type}"
             ),
         )
@@ -234,12 +239,12 @@ class ConfigurationValueError(ConfigurationError, NumCircBufValueError):
 
     def __init__(
         self,
-        class_obj,
-        parameter,
-        received_value,
-        valid_values: tuple | dict,
-        message="Invalid configuration parameter.",
-    ):
+        class_obj: type,
+        parameter: str,
+        received_value: Any,
+        valid_values: tuple[Any, ...] | dict[Literal["min", "max"], float | int],
+        message: str = "Invalid configuration parameter.",
+    ) -> None:
         self.parameter = parameter
         self.received_value = received_value
         self.valid_values = valid_values
@@ -261,7 +266,9 @@ class ConfigurationValueError(ConfigurationError, NumCircBufValueError):
 class IndexOutOfBounds(NumCircBufIndexError):
     """Exception raised for invalid buffer indexing."""
 
-    def __init__(self, obj, index, message="Index out of bounds."):
+    def __init__(
+        self, obj: object, index: int, message: str = "Index out of bounds."
+    ) -> None:
         self.index = index
         super().__init__(
             class_obj=obj.__class__,
@@ -273,7 +280,7 @@ class IndexOutOfBounds(NumCircBufIndexError):
 class InvalidModification(NumCircBufTypeError):
     """Raised when attempting to modify a buffer invalidly."""
 
-    def __init__(self, obj, recommendation):
+    def __init__(self, obj: object, recommendation: str) -> None:
         self.recommendation = recommendation
         super().__init__(
             class_obj=obj.__class__,
@@ -288,7 +295,9 @@ class InvalidModification(NumCircBufTypeError):
 class UnsupportedOperation(NumCircBufArithmeticError):
     """Operation not supported for this buffer dtype."""
 
-    def __init__(self, obj, func, func_str, message):
+    def __init__(
+        self, obj: object, func: Callable[..., Any], func_str: str, message: str
+    ) -> None:
         self.func = func
         self.func_str = func_str
         super().__init__(class_obj=obj.__class__, obj=obj, message=message)
@@ -302,12 +311,14 @@ class DataSizeWarning(NumCircBufRuntimeWarning):
 
     def __init__(
         self,
-        obj,
-        data_size,
-        maxlen,
-        message="Data size exceeds total buffer capacity. "
-        "Only last N elements will be stored.",
-    ):
+        obj: object,
+        data_size: int,
+        maxlen: int,
+        message: str = (
+            "Data size exceeds total buffer capacity. "
+            "Only last N elements will be stored."
+        ),
+    ) -> None:
         self.data_size = data_size
         self.maxlen = maxlen
         super().__init__(

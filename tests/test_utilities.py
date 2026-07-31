@@ -13,40 +13,42 @@
 # limitations under the License.
 
 from __future__ import annotations
-import os
-import sys
-from io import StringIO
-from pathlib import Path
-import time
-from itertools import product
+
 import ctypes
-import platform  # noqa: F401
 import logging
+import os
+import platform  # noqa: F401
+import sys
+import time
 import warnings
+from io import StringIO
+from itertools import product
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
 from numcircbuf import (
-    system_info,
-    determine_operation_focus,
-    RunningMeanSqBuffer,
-    RunningMeanBuffer,
-    OverwriteCircBuffer,
     BlockingCircBuffer,
+    OverwriteCircBuffer,
+    RunningMeanBuffer,
+    RunningMeanSqBuffer,
     bench_utils,
     constants,
+    determine_operation_focus,
+    system_info,
 )
 from numcircbuf.exceptions import (
-    NumCircBufValueError,
-    NumCircBufTypeError,
-    NumCircBufDeprecationWarning,
-    NumCircBufFutureWarning,
     NumCircBufArithmeticError,
+    NumCircBufDeprecationWarning,
     NumCircBufError,
-    NumCircBufWarning,
-    NumCircBufRuntimeError,
+    NumCircBufFutureWarning,
     NumCircBufOSError,
+    NumCircBufRuntimeError,
+    NumCircBufTypeError,
+    NumCircBufValueError,
+    NumCircBufWarning,
 )
 
 from .constants import SUPPORTED_DTYPES_ALL, SUPPORTED_DTYPES_FP
@@ -169,14 +171,14 @@ def test_determine_operation_focus_exceptions():
     ) in cases:
         with pytest.raises(exc) as exc_info:
             determine_operation_focus(
-                buffer_type=buffer_type,
-                dtype=dtype,
+                buffer_type=buffer_type,  # type: ignore[arg-type]
+                dtype=dtype,  # type: ignore[arg-type]
                 buffer_maxlen=buffer_maxlen,
                 block_size=block_size,
                 calc_every=calc_every,
             )
 
-        exc = exc_info.value
+        exc = exc_info.value  # type: ignore[assignment]
         assert exc.class_obj is None
         assert exc.obj is None
         assert exc.message
@@ -292,7 +294,7 @@ def test_generate_rand_memmap_arr_not_covered(dtype):
     child_ss = ss.spawn(1)
     rng = np.random.default_rng(child_ss[0])
 
-    test_args_tuple = (
+    test_args_tuple: tuple[Any, ...] = (
         (None, 1),
         (2, None),
         (None, None),
@@ -320,7 +322,7 @@ def test_generate_rand_memmap_arr_not_covered(dtype):
             mmap_obj = getattr(arr, "_mmap", None)
             if mmap_obj is not None:
                 mmap_obj.close()
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         try:
@@ -379,7 +381,7 @@ def test_generate_rand_memmap_arr_exceptions():
         ),
     ):
         with pytest.raises(exception) as exc_info:
-            bench_utils.generate_rand_memmap_arr(
+            bench_utils.generate_rand_memmap_arr(  # type: ignore[type-var]
                 dtype,
                 (1,),
                 path,
@@ -472,7 +474,7 @@ def test_generate_bench_memmaps(dtype):
                     mmap_obj = getattr(arr, "_mmap", None)
                     if mmap_obj is not None:
                         mmap_obj.close()
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         for _, _, path, valid in cases:
@@ -849,7 +851,7 @@ def test_raw_bench(dtype):
                 for warm_cache in (True, False):
                     bench_utils.raw_bench(
                         buffer,
-                        offset_data,
+                        offset_data,  # type: ignore[arg-type]
                         warmup_data,
                         data,
                         n_runs,
@@ -887,7 +889,7 @@ def test_raw_bench_write_read(dtype):
                 for warm_cache in (True, False):
                     bench_utils.raw_bench_write_read(
                         buffer,
-                        offset_data,
+                        offset_data,  # type: ignore[arg-type]
                         warmup_data,
                         data,
                         n_runs,
@@ -902,7 +904,7 @@ def test_reference_buffer(dtype):
     maxlen = 4
 
     bench_utils._cache_line_size = None
-    buf = bench_utils.RefPythonNumPyCircBuffer(maxlen, dtype=dtype)
+    buf: Any = bench_utils.RefPythonNumPyCircBuffer(maxlen, dtype=dtype)
     assert buf.maxlen == maxlen
     assert not np.any(buf.buffer)
 
@@ -976,14 +978,14 @@ def test_prepare_blocks(dtype):
                     warmup_data.shape,
                     single_offset=single_offset,
                     offset_path=offset_path,
-                    offset_data_shape=offset_data.shape,
+                    offset_data_shape=offset_data.shape,  # type: ignore[union-attr]
                     prepare_fill=prepare_fill,
                     fill_path=fill_path,
-                    fill_data_shape=fill_data.shape,
+                    fill_data_shape=fill_data.shape,  # type: ignore[union-attr]
                     prepare_evict=prepare_evict,
                     evict_path=evict_path,
                 )
-                cases = (
+                cases: tuple[Any, ...] = (
                     (
                         test_data,
                         dtype,
@@ -1040,6 +1042,7 @@ def test_prepare_blocks(dtype):
                     assert arr.shape == expected_shape
 
     def _run_exception_cases_in_context():
+        assert offset_data is not None and fill_data is not None
         for (
             _offset_path,
             offset_data_shape,
@@ -1098,7 +1101,7 @@ def test_prepare_blocks(dtype):
         fill_path,
         fill_data,
         evict_path,
-        evict_arr,
+        _,
     ):
         _run_test_cases_in_context()
         _run_exception_cases_in_context()
@@ -1130,9 +1133,7 @@ def test_get_cache_line_linux_from_proc_cpuinfo(mocker):
     def mock_exists(path):
         if "/sys/devices/system/cpu/cpu0/cache/index0" in path:
             return False
-        if path == "/proc/cpuinfo":
-            return True
-        return False
+        return path == "/proc/cpuinfo"
 
     mocker.patch("os.path.exists", side_effect=mock_exists)
 
@@ -1164,7 +1165,7 @@ def test_get_l3_linux(mocker):
     mocker.patch("builtins.open", side_effect=side_effect)
     assert system_info._get_l3_linux() == 8192 * 1024
 
-    def side_effect(path, mode="r"):
+    def side_effect(path, mode="r"):  # type: ignore[no-redef]
         if "level" in path:
             return StringIO("3")
         if "size" in path:
@@ -1174,7 +1175,7 @@ def test_get_l3_linux(mocker):
     mocker.patch("builtins.open", side_effect=side_effect)
     assert system_info._get_l3_linux() == 16 * 1024**2
 
-    def side_effect(path, mode="r"):
+    def side_effect(path, mode="r"):  # type: ignore[no-redef]
         if "level" in path:
             return StringIO("3")
         if "size" in path:
@@ -1219,7 +1220,7 @@ def test_get_l3_linux_exception_handling(mocker):
     handle_level.__enter__.return_value.read.return_value = "3"
 
     handle_size = mocker.MagicMock()
-    handle_size.__enter__.side_effect = IOError("Mock permissions denied")
+    handle_size.__enter__.side_effect = OSError("Mock permissions denied")
 
     mock_open.side_effect = [handle_level, handle_size]
 
@@ -1469,7 +1470,7 @@ def test_deprecation_and_future_warning():
             stacklevel=2,
         )
 
-    with pytest.warns(
+    with pytest.warns(  # noqa: PT031
         (NumCircBufDeprecationWarning, NumCircBufFutureWarning)
     ) as record:
         _raise_deprecation_warning()
@@ -1479,7 +1480,7 @@ def test_deprecation_and_future_warning():
     assert isinstance(record[1].message, NumCircBufFutureWarning)
 
     for warning_info in record:
-        w = warning_info.message
+        w: Any = warning_info.message
         assert w.obj == mock_obj
         assert w.feature == mock_feature
         assert w.replacement == mock_replacement
@@ -1583,7 +1584,7 @@ def test_trimmed_mean_times_exceptions():
         (np.array([0.0, float("nan"), float("inf")]), False),
         (np.array([0.0, float("nan"), float("inf")]), True),
     ):
-        with pytest.raises(NumCircBufArithmeticError) as exc_info:
+        with pytest.raises(NumCircBufArithmeticError) as exc_info:  # noqa: SIM117
             with np.errstate(invalid="ignore"):
                 bench_utils.trimmed_mean_times(arr, return_int)
 
@@ -1605,7 +1606,7 @@ def test_base_exception_and_warning_no_message():
             stacklevel=2,
         )
 
-    w = record[0].message
+    w: Any = record[0].message
     assert w.class_obj is None
     assert w.obj is None
     assert w.message is None

@@ -14,24 +14,24 @@
 
 import math
 
-import pytest
 import numpy as np
+import pytest
 
 from numcircbuf import OverwriteCircBuffer
 from numcircbuf.exceptions import (
-    ConfigurationValueError,
     ConfigurationTypeError,
+    ConfigurationValueError,
     UnsupportedOperation,
 )
 
 try:
-    import numcircbuf_test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+    import numcircbuf_test_cython_api as _test_cython_api  # type: ignore[unused-ignore, import-not-found] # pyright: ignore[reportMissingImports]
 
     HAS_C_TESTS = True
 
 except ImportError:
     try:
-        import numcircbuf._test_cython_api as _test_cython_api  # pyright: ignore[reportMissingImports]
+        from numcircbuf import _test_cython_api  # type: ignore[unused-ignore, attr-defined] # pyright: ignore[reportMissingImports]  # noqa: I001
 
         HAS_C_TESTS = True
 
@@ -40,9 +40,9 @@ except ImportError:
 
 from .constants import (
     CAPACITIES,
+    DTYPE_TO_SUFFIX,
     SUPPORTED_DTYPES_ALL,
     SUPPORTED_DTYPES_FP,
-    DTYPE_TO_SUFFIX,
 )
 
 MODES = (

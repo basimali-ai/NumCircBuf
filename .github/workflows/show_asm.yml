@@ -4,7 +4,58 @@ on:
   workflow_dispatch:
 
 jobs:
-  placeholder:
-    runs-on: ubuntu-latest
+  generate_assembly:
+    name: Show Assembly on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - run: echo "This is a dummy placeholder to register the workflow."
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate Assembly
+        env:
+          SAVE_ASM: "1"
+        run: |
+          pip install setuptools "numpy<3.0.0" cython
+          python setup.py build_ext --inplace
+
+      - name: Rename and zip files
+        shell: python
+        run: |
+          import os, sys, zipfile
+          from pathlib import Path
+
+          os_name = '${{ matrix.os }}'
+          cpp_file = 'src/numcircbuf/core.cpp'
+
+          asm_files = list(Path('.').rglob('core*.asm')) + list(Path('.').rglob('core*.s'))
+          if not asm_files:
+              print('Error: Could not find the assembly file')
+              print('Dumping all .s and .asm files found in the workspace:')
+              for f in Path('.').rglob('*.*'):
+                  if f.suffix in ['.s', '.asm']:
+                      print(f' - {f}')
+              sys.exit(1)
+
+          zip_name = f'core_{os_name}_asm_bundle.zip'
+          with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zf:
+              for asm_file in asm_files:
+                  print(f'Adding to bundle: {asm_file}')
+                  zf.write(asm_file, arcname=asm_file.name)
+              zf.write(cpp_file, arcname='core.cpp')
+
+      - name: Upload core_${{ matrix.os }}_asm_bundle.zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-${{ matrix.os }}-asm-bundle
+          path: core_${{ matrix.os }}_asm_bundle.zip
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
