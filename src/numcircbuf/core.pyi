@@ -22,11 +22,11 @@ statistical calculations.
 """
 
 from collections.abc import Iterable
-from typing import Any, Generic, Literal, overload
+from typing import Generic, Literal, overload
 
 import numpy as np
 
-from ._typing import ConcreteFloatingT, ConcreteScalarT
+from ._typing import ConcreteFloatingT, ConcreteIntegerT, ConcreteScalarT
 from .constants import Limits
 from .protocols import ViewProtocol
 
@@ -77,7 +77,12 @@ class BlockingCircBuffer(Generic[ConcreteScalarT]):
     @overload
     def __init__(self, maxlen: int, dtype: type[ConcreteScalarT]) -> None: ...
     # ---
-    def write_append(self, value: float | int, timeout: float = -1) -> bool:
+    @overload
+    def write_append(
+        self: BlockingCircBuffer[ConcreteFloatingT],
+        value: float,
+        timeout: float = -1,
+    ) -> bool:
         """
         Writes a single value to the buffer.
 
@@ -99,10 +104,17 @@ class BlockingCircBuffer(Generic[ConcreteScalarT]):
             False if timeout occurred.
         :rtype: bool
         """
-
+    @overload
+    def write_append(
+        self: BlockingCircBuffer[ConcreteIntegerT],
+        value: int,
+        timeout: float = -1,
+    ) -> bool: ...
+    # ---
+    @overload
     def write_extend(
-        self,
-        data: Iterable[float | int],
+        self: BlockingCircBuffer[ConcreteFloatingT],
+        data: Iterable[float],
         timeout: float = -1,
         warn_size: bool = True,
     ) -> bool:
@@ -113,7 +125,7 @@ class BlockingCircBuffer(Generic[ConcreteScalarT]):
         Returns True on success, False on timeout.
 
         :param data: Block of data to write to the buffer.
-        :type data: Iterable[float | int]
+        :type data: Iterable[float] | Iterable[int]
 
         :param timeout:
             Maximum time to wait for space in seconds.
@@ -131,7 +143,14 @@ class BlockingCircBuffer(Generic[ConcreteScalarT]):
             False if timeout occurred.
         :rtype: bool
         """
-
+    @overload
+    def write_extend(
+        self: BlockingCircBuffer[ConcreteIntegerT],
+        data: Iterable[int],
+        timeout: float = -1,
+        warn_size: bool = True,
+    ) -> bool: ...
+    # ---
     def write_extend_unchecked(
         self,
         data: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
@@ -209,7 +228,7 @@ class BlockingCircBuffer(Generic[ConcreteScalarT]):
 
     def read_into(
         self,
-        out_array_np: np.ndarray[tuple[int], np.dtype[Any]],
+        out_array_np: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
         timeout: float = -1,
         partial_read: bool = True,
     ) -> int:
@@ -384,9 +403,12 @@ class OverwriteCircBuffer(Generic[ConcreteScalarT]):
         dtype: type[ConcreteScalarT],
     ) -> None: ...
     # ---
+    @overload
     def append(
-        self, value: float | int, return_overwritten: bool = False
-    ) -> float | int | None:
+        self: OverwriteCircBuffer[ConcreteFloatingT],
+        value: float,
+        return_overwritten: bool = False,
+    ) -> float | None:
         """
         Appends a value, returning the overwritten value if the buffer
         was full, depending on your selected policy.
@@ -394,7 +416,7 @@ class OverwriteCircBuffer(Generic[ConcreteScalarT]):
         (**Not Recommended for large data, Use extend if possible**)
 
         :param value: value to append
-        :type value: float
+        :type value: float | int
 
         :param return_overwritten:
             True if you need overwritten value.
@@ -402,12 +424,19 @@ class OverwriteCircBuffer(Generic[ConcreteScalarT]):
         :type return_overwritten: bool
 
         :return: Overwritten value or None
-        :rtype: Optional[float]
+        :rtype: Optional[float | int]
         """
-
+    @overload
+    def append(
+        self: OverwriteCircBuffer[ConcreteIntegerT],
+        value: int,
+        return_overwritten: bool = False,
+    ) -> int | None: ...
+    # ---
+    @overload
     def extend(
-        self,
-        block: Iterable[float | int],
+        self: OverwriteCircBuffer[ConcreteFloatingT],
+        block: Iterable[float],
         return_overwritten: bool = False,
         warn_size: bool = True,
     ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT]]:
@@ -418,7 +447,7 @@ class OverwriteCircBuffer(Generic[ConcreteScalarT]):
         Always returns an empty array if return_overwritten_policy was "never".
 
         :param block: Block of data to extend the buffer with
-        :type block: Iterable[float | int]
+        :type block: Iterable[float] | Iterable[int]
 
         :param return_overwritten:
             True if you need overwritten values.
@@ -435,7 +464,14 @@ class OverwriteCircBuffer(Generic[ConcreteScalarT]):
             If not return_overwritten then always returns an empty np.ndarray
         :rtype: ndarray[_AnyShape, dtype[Any]]
         """
-
+    @overload
+    def extend(
+        self: OverwriteCircBuffer[ConcreteIntegerT],
+        block: Iterable[int],
+        return_overwritten: bool = False,
+        warn_size: bool = True,
+    ) -> np.ndarray[tuple[int], np.dtype[ConcreteScalarT]]: ...
+    # ---
     def extend_unchecked(
         self,
         block_np: np.ndarray[tuple[int], np.dtype[ConcreteScalarT]],
@@ -632,24 +668,24 @@ class RunningMeanSqBuffer(Generic[ConcreteFloatingT]):
     def recalculate(self) -> None:
         """Recalculates sum of squares from the buffer to correct drift."""
 
-    def append(self, value: float | int) -> None:
+    def append(self, value: float) -> None:
         """
         Appends a single value.
 
         (**Not Recommended for large data, Use extend if possible**)
 
         :param value: Value to append
-        :type value: float | int
+        :type value: float
 
         """
 
-    def extend(self, block: Iterable[float | int], warn_size: bool = True) -> None:
+    def extend(self, block: Iterable[float], warn_size: bool = True) -> None:
         """
         Extends the buffer with a block of elements using
         vectorized operations.
 
         :param block: Block of data to extend the buffer with.
-        :type block: Iterable[float | int]
+        :type block: Iterable[float]
 
         :param warn_size: If you want to receive warnings when block size
          exceeds the buffer's maximum capacity.
@@ -771,23 +807,23 @@ class RunningMeanBuffer(Generic[ConcreteFloatingT]):
     def recalculate(self) -> None:
         """Recalculates sum from the buffer to correct corruption or drift."""
 
-    def append(self, value: float | int) -> None:
+    def append(self, value: float) -> None:
         """
         Appends a single value.
 
         (**Not Recommended for large data, Use extend if possible**)
 
         :param value: Value to append
-        :type value: float | int
+        :type value: float
         """
 
-    def extend(self, block: Iterable[float | int], warn_size: bool = True) -> None:
+    def extend(self, block: Iterable[float], warn_size: bool = True) -> None:
         """
         Extends the buffer with a block of elements using
         vectorized operations.
 
         :param block: Block of data to extend the buffer with.
-        :type block: Iterable[float | int]
+        :type block: Iterable[float]
 
         :param warn_size: If you want to receive warnings when block size
          exceeds the buffer's maximum capacity.
@@ -918,7 +954,7 @@ class IntegratedGatedBuffer(Generic[ConcreteFloatingT]):
     def recalculate(self) -> None:
         """Recalculates gated sum and count from the buffer."""
 
-    def append(self, value: float | int, already_squared: bool = False) -> None:
+    def append(self, value: float, already_squared: bool = False) -> None:
         """
         Appends a value to the buffer.
 
@@ -928,7 +964,7 @@ class IntegratedGatedBuffer(Generic[ConcreteFloatingT]):
         (**Not Recommended for large data, Use extend if possible**)
 
         :param value: Value to append
-        :type value: float | int
+        :type value: float
         :param already_squared:
             If True, skips the internal squaring operation.
             Set this to True if the input is already signal power.
@@ -937,7 +973,7 @@ class IntegratedGatedBuffer(Generic[ConcreteFloatingT]):
 
     def extend(
         self,
-        block: Iterable[float | int],
+        block: Iterable[float],
         warn_size: bool = True,
         already_squared: bool = False,
     ) -> None:
@@ -948,7 +984,7 @@ class IntegratedGatedBuffer(Generic[ConcreteFloatingT]):
         and squared internally using vectorized operations before storage.
 
         :param block: Block of values to extend the buffer with.
-        :type block: Iterable[float | int]
+        :type block: Iterable[float]
 
         :param warn_size:
             If you want to receive warnings when block size
