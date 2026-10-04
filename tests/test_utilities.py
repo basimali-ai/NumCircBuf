@@ -134,57 +134,78 @@ def test_determine_operation_focus(caplog, buffer_type, dtype, block_size, verbo
         )
 
 
-def test_determine_operation_focus_exceptions():
-    cases = (
+_DEFAULTS: dict[str, Any] = {
+    "buffer_type": RunningMeanBuffer,
+    "dtype": np.float64,
+    "buffer_maxlen": 10,
+    "block_size": 5,
+    "calc_every": 5,
+    "fallback": "extend/append",
+}
+
+
+@pytest.mark.parametrize(
+    ("expected_exc", "overrides"),
+    (
         # calc_every <= 0
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, 10, 5, 0),
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, 10, 5, -1),
+        pytest.param(NumCircBufValueError, {"calc_every": 0}, id="calc_every=0"),
+        pytest.param(NumCircBufValueError, {"calc_every": -1}, id="calc_every=-1"),
         # block_size <= 0
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, 10, 0, 5),
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, 10, -5, 5),
+        pytest.param(NumCircBufValueError, {"block_size": 0}, id="block_size=0"),
+        pytest.param(NumCircBufValueError, {"block_size": -5}, id="block_size=-5"),
         # buffer_maxlen <= 2
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, 2, 5, 5),
-        (NumCircBufValueError, RunningMeanBuffer, np.float64, -1, 5, 5),
+        pytest.param(NumCircBufValueError, {"buffer_maxlen": 2}, id="buffer_maxlen=2"),
+        pytest.param(
+            NumCircBufValueError, {"buffer_maxlen": -1}, id="buffer_maxlen=-1"
+        ),
         # buffer_maxlen > PY_SSIZE_T_MAX
-        (
+        pytest.param(
             NumCircBufValueError,
-            RunningMeanBuffer,
-            np.float64,
-            constants.Limits.PY_SSIZE_T_MAX.value + 1,
-            5,
-            5,
+            {
+                "buffer_maxlen": constants.Limits.PY_SSIZE_T_MAX.value + 1,
+            },
+            id="buffer_maxlen>PY_SSIZE_T_MAX",
         ),
         # dtype not np.float32 or np.float64
-        (NumCircBufTypeError, RunningMeanBuffer, np.int32, 10, 5, 5),
-        (NumCircBufTypeError, RunningMeanBuffer, float, 10, 5, 5),
-        # buffer_type not a subclass of RunningMeanBuffer or RunningMeanSqBuffer
-        (NumCircBufTypeError, OverwriteCircBuffer, np.float64, 10, 5, 5),
-        (NumCircBufTypeError, BlockingCircBuffer, np.float64, 10, 5, 5),
-    )
-    for (
-        exc,
-        buffer_type,
-        dtype,
-        buffer_maxlen,
-        block_size,
-        calc_every,
-    ) in cases:
-        with pytest.raises(exc) as exc_info:
-            determine_operation_focus(
-                buffer_type=buffer_type,  # type: ignore[arg-type]
-                dtype=dtype,  # type: ignore[arg-type]
-                buffer_maxlen=buffer_maxlen,
-                block_size=block_size,
-                calc_every=calc_every,
-            )
+        pytest.param(NumCircBufTypeError, {"dtype": np.int32}, id="dtype=int32"),
+        pytest.param(NumCircBufTypeError, {"dtype": float}, id="dtype=float"),
+        # buffer_type not a valid buffer class
+        pytest.param(
+            NumCircBufTypeError,
+            {"buffer_type": OverwriteCircBuffer},
+            id="buffer_type=OverwriteCircBuffer",
+        ),
+        pytest.param(
+            NumCircBufTypeError,
+            {"buffer_type": BlockingCircBuffer},
+            id="buffer_type=BlockingCircBuffer",
+        ),
+        # incorrect fallback
+        pytest.param(
+            NumCircBufValueError, {"fallback": "extend"}, id="fallback=extend"
+        ),
+    ),
+)
+def test_determine_operation_focus_exceptions(
+    expected_exc: type[Exception],
+    overrides: dict[str, Any],
+):
+    params = _DEFAULTS | overrides
 
-        exc = exc_info.value  # type: ignore[assignment]
-        assert exc.class_obj is None
-        assert exc.obj is None
-        assert exc.message
+    with pytest.raises(expected_exc) as exc_info:
+        determine_operation_focus(**params)
+
+    exc: NumCircBufError = exc_info.value  # type: ignore[assignment]
+    assert exc.class_obj is None
+    assert exc.obj is None
+    assert exc.message
 
 
-def test_determine_operation_focus_fallback():
+@pytest.mark.parametrize("fallback", ("extend/append", "calculation", None))
+def test_determine_operation_focus_fallback(fallback):
+    kwargs = {} if fallback is None else {"fallback": fallback}
+    expected = "extend/append" if fallback is None else fallback
+
     # buffer_maxlen < block_size
     result = determine_operation_focus(
         buffer_type=RunningMeanBuffer,
@@ -192,8 +213,9 @@ def test_determine_operation_focus_fallback():
         buffer_maxlen=10,
         block_size=20,
         calc_every=5,
+        **kwargs,
     )
-    assert result == "extend/append"
+    assert result == expected
 
     # maxlen asks for too much memory
     result = determine_operation_focus(
@@ -202,8 +224,28 @@ def test_determine_operation_focus_fallback():
         buffer_maxlen=10**9,
         block_size=10,
         calc_every=5,
+        **kwargs,
     )
-    assert result == "extend/append"
+    assert result == expected
+
+
+def test_determine_operation_focus_exception_fallback(mocker, caplog):
+    mocker.patch(
+        "numcircbuf.bench_utils.raw_bench_with_calc",
+        side_effect=RuntimeError("Simulated benchmark failure"),
+    )
+    with caplog.at_level(logging.WARNING):
+        result = determine_operation_focus(
+            buffer_type=RunningMeanBuffer,
+            dtype=np.float64,
+            buffer_maxlen=1024,
+            block_size=64,
+            calc_every=5,
+            fallback="calculation",
+        )
+    assert result == "calculation"
+    assert "Automatic benchmark failed" in caplog.text
+    assert "Simulated benchmark failure" in caplog.text
 
 
 def test_evict_arr():

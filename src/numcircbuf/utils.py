@@ -93,6 +93,7 @@ def determine_operation_focus(
     block_size: int,
     calc_every: int,
     verbose: bool = False,
+    fallback: Literal["calculation", "extend/append"] = "extend/append",
 ) -> Literal["calculation", "extend/append"]:
     """
     Empirically determine the optimal performance strategy for a specific buffer configuration.
@@ -130,14 +131,19 @@ def determine_operation_focus(
         to the logger. Defaults to False.
     :type verbose: bool, optional
 
-    :return: The optimization focus that yielded the lowest total execution time.
+    :param fallback: `operation_focus` to return if the benchmark fails
+        or cannot run within memory limits. Defaults to "extend/append".
+    :type fallback: Literal["calculation", "extend/append"], optional
+
+    :return: The `operation_focus` that yielded the lowest total execution time.
     :rtype: Literal["calculation", "extend/append"]
 
     :raises NumCircBufTypeError:
         If an unsupported `buffer_type` or `dtype` is provided.
     :raises NumCircBufValueError:
         If `calc_every <= 0` or `block_size <= 0` or
-        `buffer_maxlen <= 2` or `buffer_maxlen` > :meth:`PY_SSIZE_T_MAX`
+        `buffer_maxlen <= 2` or `buffer_maxlen` > :meth:`PY_SSIZE_T_MAX` or
+        an invalid `fallback` value is provided.
     """
 
     if calc_every <= 0:
@@ -157,6 +163,12 @@ def determine_operation_focus(
     if dtype not in (np.float64, np.float32):
         raise NumCircBufTypeError(
             message="`dtype` must be `np.float64` or `np.float32`"
+        )
+
+    if fallback not in ("calculation", "extend/append"):
+        raise NumCircBufValueError(
+            message="`fallback` must be 'calculation' or 'extend/append', "
+            f"got {fallback!r}"
         )
 
     from .core import RunningMeanBuffer, RunningMeanSqBuffer
@@ -202,9 +214,9 @@ def determine_operation_focus(
             f"Benchmark precision warning: `calc_every` ({calc_every}) is greater "
             f"than the calculated `n_runs` ({n_runs}). The calculation "
             "overhead cannot be safely measured within memory limits. "
-            "Defaulting to 'extend/append' optimization."
+            f"Returning fallback: {fallback!r}"
         )
-        return "extend/append"
+        return fallback
 
     start_time = time.time()
     unique_id = uuid.uuid4().hex[:6]
@@ -226,72 +238,80 @@ def determine_operation_focus(
         "evict_path": f"temp_bench_evict_{unique_id}.dat",
     }
 
-    with temporary_benchmark_data(
-        dtype,
-        buffer_maxlen,
-        block_size,
-        n_runs,
-        create_offset_data=True,
-        create_fill_data=True,
-        create_evict_arr=True,
-        **temp_data_paths,
-    ) as (
-        _,
-        data,
-        _,
-        warmup_data,
-        _,
-        offset_data,
-        _,
-        fill_data,
-        _,
-        evict_arr,
-    ):
-        times = {}
+    try:
+        with temporary_benchmark_data(
+            dtype,
+            buffer_maxlen,
+            block_size,
+            n_runs,
+            create_offset_data=True,
+            create_fill_data=True,
+            create_evict_arr=True,
+            **temp_data_paths,
+        ) as (
+            _,
+            data,
+            _,
+            warmup_data,
+            _,
+            offset_data,
+            _,
+            fill_data,
+            _,
+            evict_arr,
+        ):
+            times = {}
 
-        operation_focus: Literal["calculation", "extend/append"]
-        for operation_focus in ("calculation", "extend/append"):
-            buffer: RunningMeanSqBuffer[Any] | RunningMeanBuffer[Any]
-            if issubclass(buffer_type, RunningMeanSqBuffer):
-                buffer = RunningMeanSqBuffer(
-                    maxlen=buffer_maxlen,
-                    operation_focus=operation_focus,
-                    dtype=dtype,
+            operation_focus: Literal["calculation", "extend/append"]
+            for operation_focus in ("calculation", "extend/append"):
+                buffer: RunningMeanSqBuffer[Any] | RunningMeanBuffer[Any]
+                if issubclass(buffer_type, RunningMeanSqBuffer):
+                    buffer = RunningMeanSqBuffer(
+                        maxlen=buffer_maxlen,
+                        operation_focus=operation_focus,
+                        dtype=dtype,
+                    )
+                else:
+                    buffer = RunningMeanBuffer(
+                        maxlen=buffer_maxlen,
+                        operation_focus=operation_focus,
+                        dtype=dtype,
+                    )
+
+                assert fill_data is not None and offset_data is not None
+                times[operation_focus] = raw_bench_with_calc(
+                    buffer,
+                    getattr(buffer, func_str),
+                    fill_data,
+                    offset_data,
+                    warmup_data,
+                    data,
+                    calc_every,
+                    n_runs,
+                    evict_arr,
                 )
+
+            if verbose:
+                elapsed = time.time() - start_time
+
+                calculation_speedup = times["extend/append"] / times["calculation"]
+                extend_speedup = times["calculation"] / times["extend/append"]
+
+                logger.info(
+                    "\nSpeed Comparison ('calculation' vs 'extend/append'):"
+                    f"\n  'calculation' speedup = {calculation_speedup:.2f}×"
+                    f"\n  'extend/append' speedup = {extend_speedup:.2f}×"
+                    f"\nTotal time taken for data generation + benchmark: {elapsed:.3f} s\n"
+                )
+
+            if times["calculation"] < times["extend/append"]:
+                return "calculation"
             else:
-                buffer = RunningMeanBuffer(
-                    maxlen=buffer_maxlen,
-                    operation_focus=operation_focus,
-                    dtype=dtype,
-                )
+                return "extend/append"
 
-            assert fill_data is not None and offset_data is not None
-            times[operation_focus] = raw_bench_with_calc(
-                buffer,
-                getattr(buffer, func_str),
-                fill_data,
-                offset_data,
-                warmup_data,
-                data,
-                calc_every,
-                n_runs,
-                evict_arr,
-            )
-
-        if verbose:
-            elapsed = time.time() - start_time
-
-            calculation_speedup = times["extend/append"] / times["calculation"]
-            extend_speedup = times["calculation"] / times["extend/append"]
-
-            logger.info(
-                "\nSpeed Comparison ('calculation' vs 'extend/append'):"
-                f"\n  'calculation' speedup = {calculation_speedup:.2f}×"
-                f"\n  'extend/append' speedup = {extend_speedup:.2f}×"
-                f"\nTotal time taken for data generation + benchmark: {elapsed:.3f} s\n"
-            )
-
-        if times["calculation"] < times["extend/append"]:
-            return "calculation"
-        else:
-            return "extend/append"
+    except Exception:
+        logger.warning(
+            f"Automatic benchmark failed. Returning fallback: {fallback!r}",
+            exc_info=True,
+        )
+        return fallback

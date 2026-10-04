@@ -431,7 +431,7 @@ def __init__(
 - **`"extend/append"`: O(n) statistics, lower write cost.**
 
 Use the library utility `determine_operation_focus` to automatically select the best `operation_focus`.
-This function runs a small runtime benchmark and returns the appropriate Literal value for your use case:
+This function runs a small runtime benchmark and returns the appropriate Literal value for your use case and the current host system:
 
 ```python
 def determine_operation_focus(
@@ -439,13 +439,14 @@ def determine_operation_focus(
     dtype: type[np.float32] | type[np.float64],
     buffer_maxlen: int,
     block_size: int, # Use 1 if you will be appending a single element only.
-    calc_every: int, # Calculate every n blocks.
-    verbose: bool = False, # Logs the exact relative multipliers,
-                           # as well as total time spent in the function.
-) -> Literal["calculation", "extend/append"]: # Outputs the best operation focus
-                                              # for this (use case) + (system),
-                                              # This can be directly passed to
-                                              # the buffer init
+    calc_every: int,# Calculate every n blocks.
+    verbose: bool = False,
+    # Logs the relative multipliers and total time spent in the function.
+    fallback: Literal["calculation", "extend/append"] = "extend/append",
+    # `operation_focus` to return if the benchmark fails.
+) -> Literal["calculation", "extend/append"]:
+# Outputs the best `operation_focus` for this (use case) + (system),
+# This can be directly passed to the buffer init
 ```
 
 Actual performance depends on buffer's `maxlen`, block size, overwrite rate, and statistics frequency.
