@@ -97,3 +97,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - IntegratedGatedBuffer:
     - Replace standard `fmax` and `fmaxf` calls with custom unchecked equivalents under the guaranteed absence of NaN values.
   - Use explicit conditional expressions and move select helper functions into C++ to ensure compilers reliably generate branchless conditional moves.
+
+## [1.3.0] - 2026-10-05
+
+### Added
+
+- **determine_operation_focus:** Add optional `fallback` parameter (`Literal["calculation", "extend/append"]`, defaulting to `"extend/append"`), allowing callers to customize which `operation_focus` is returned if the micro-benchmark fails or cannot run within memory limits.
+
+### Changed
+
+- **determine_operation_focus:** Wrap micro-benchmark execution in defensive exception handling to prevent unexpected environment errors from propagating to the caller; log a warning with full traceback and return the configured `fallback`.
