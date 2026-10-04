@@ -229,11 +229,15 @@ def test_determine_operation_focus_fallback(fallback):
     assert result == expected
 
 
-def test_determine_operation_focus_exception_fallback(mocker, caplog):
-    mocker.patch(
+@pytest.mark.parametrize(
+    "raise_at",
+    (
+        "numcircbuf.bench_utils.generate_bench_memmaps",
         "numcircbuf.bench_utils.raw_bench_with_calc",
-        side_effect=RuntimeError("Simulated benchmark failure"),
-    )
+    ),
+)
+def test_determine_operation_focus_exception_fallback(mocker, caplog, raise_at):
+    mocker.patch(raise_at, side_effect=RuntimeError("Simulated benchmark failure"))
     with caplog.at_level(logging.WARNING):
         result = determine_operation_focus(
             buffer_type=RunningMeanBuffer,
