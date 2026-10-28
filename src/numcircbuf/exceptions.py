@@ -280,13 +280,16 @@ class IndexOutOfBounds(NumCircBufIndexError):
 class InvalidModification(NumCircBufTypeError):
     """Raised when attempting to modify a buffer invalidly."""
 
-    def __init__(self, obj: object, recommendation: str) -> None:
+    def __init__(
+        self, obj: object, recommendation: str, action: str = "modified"
+    ) -> None:
         self.recommendation = recommendation
+        self.action = action
         super().__init__(
             class_obj=obj.__class__,
             obj=obj,
             message=(
-                f"\n{obj} cannot be modified this way."
+                f"\n{obj} cannot be {action} this way."
                 f"\nRecommendation: {recommendation}"
             ),
         )

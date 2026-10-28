@@ -227,24 +227,23 @@ cdef str _format_index(object idx):
     if isinstance(idx, slice):
         start = '' if idx.start is None else idx.start
         stop  = '' if idx.stop  is None else idx.stop
-        step  = '' if idx.step  is None else f":{idx.step}"
-        if step:
-            return f"{start}:{stop}:{idx.step}"
+        step = idx.step
+        if step is not None:
+            return f"{start}:{stop}:{step}"
         return f"{start}:{stop}"
-    else:
-        return str(idx)
+    return str(idx)
 
 
 cdef str _view_index_error_msg(object idx):
     return (
-        "\nIndexing and slicing are only supported on a snapshot view.\n"
+        "\nIndexing and slicing are only supported on a view.\n"
         f"Use .view()[{_format_index(idx)}]"
     )
 
 
 cdef str _iter_error_msg():
     return (
-        "\nIteration is only supported on a snapshot view.\n"
+        "\nIteration is only supported on a view.\n"
         "Example:\n"
         "    view = buffer.view()\n"
         "    for x in view:\n"
@@ -337,7 +336,7 @@ cdef class _InternalCircView:
         self._empty_result = empty_result
 
     def __len__(self) -> int:
-        return self._buffer_obj.size 
+        return self._buffer_obj.size
 
     def __getitem__(self, idx: int | slice) -> float | int | np.ndarray | None:
         cdef:
@@ -498,17 +497,15 @@ cdef class _InternalCircView:
     def __setitem__(self, idx, value) -> None:
         raise exceptions.InvalidModification(
             self,
-            f"View is read only. "
-            "Use OverwriteCircBuffer.append()/extend() "
-            "or BlockingCircBuffer.write()"
-            )
+            "View is read-only. "
+            "Use the underlying buffer's supported methods to modify its contents."
+        )
 
     def __delitem__(self, idx) -> None:
         raise exceptions.InvalidModification(
             self,
-            f"View is read-only. "
-            "To remove all data, use OverwriteCircBuffer.clear() "
-            "or read()/clear() on BlockingCircBuffer"
+            "View is read-only. "
+            "Use the underlying buffer's supported methods to modify its contents."
         )
 
 
@@ -1022,26 +1019,28 @@ cdef class BlockingCircBuffer(_MainBufferProtocolBase):
     def __getitem__(self, idx) -> None:
         raise exceptions.InvalidModification(
             self,
-            _view_index_error_msg(idx)
-            )
+            _view_index_error_msg(idx),
+            action="indexed/sliced"
+        )
 
     def __iter__(self) -> None:
         raise exceptions.InvalidModification(
             self,
-            _iter_error_msg()
-            )
+            _iter_error_msg(),
+            action="iterated"
+        )
 
     def __setitem__(self, idx, value):
         raise exceptions.InvalidModification(
             self,
-            "Use .write()"
-            )
+            "Use .write_append() or .write_extend() to add element/s"
+        )
 
     def __delitem__(self, idx):
         raise exceptions.InvalidModification(
             self,
             "To remove all data, use .clear() "
-            "Or to pop/remove the oldest element, use .read() "
+            "or to pop/remove the oldest element, use .read() "
         )
 
 
@@ -1109,20 +1108,22 @@ cdef class _OverwriteCircBufferBP(_MainBufferProtocolBase):
     def __getitem__(self, idx) -> None:
         raise exceptions.InvalidModification(
             self,
-            _view_index_error_msg(idx)
-            )
+            _view_index_error_msg(idx),
+            action="indexed/sliced"
+        )
 
     def __iter__(self) -> None:
         raise exceptions.InvalidModification(
             self,
-            _iter_error_msg()
-            )
+            _iter_error_msg(),
+            action="iterated"
+        )
 
     def __setitem__(self, idx, value):
         raise exceptions.InvalidModification(
             self,
             "Use .append() or .extend() to add element/s"
-            )
+        )
 
     def __delitem__(self, idx):
         raise exceptions.InvalidModification(

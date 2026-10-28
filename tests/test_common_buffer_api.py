@@ -467,6 +467,7 @@ def _test_invalid_modifications(buf_funcs, capacity, dtype):
 
         assert exc.obj is obj
         assert exc.recommendation
+        assert exc.action
         assert exc.message
 
 

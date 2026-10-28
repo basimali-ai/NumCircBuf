@@ -29,13 +29,13 @@ try:
 
     HAS_C_TESTS = True
 
-except ImportError:
+except (ImportError, AttributeError):
     try:
-        from numcircbuf import _test_cython_api  # type: ignore[unused-ignore, attr-defined] # pyright: ignore[reportMissingImports]  # noqa: I001
+        from numcircbuf import _test_cython_api  # type: ignore[unused-ignore, attr-defined] # pyright: ignore[reportMissingImports]
 
         HAS_C_TESTS = True
 
-    except ImportError:
+    except (ImportError, AttributeError):
         HAS_C_TESTS = False
 
 from .constants import (
