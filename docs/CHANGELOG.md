@@ -107,3 +107,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **determine_operation_focus:** Wrap micro-benchmark execution in defensive exception handling to prevent unexpected environment errors from propagating to the caller; log a warning with full traceback and return the configured `fallback`.
+
+## [1.4.0] - 2026-10-28
+
+### Added
+
+- **exceptions.InvalidModification:** Add `action` parameter (defaulting to `"modified"`) and `action` instance attribute to allow programmatic inspection and customization of the rejected operation.
+
+### Fixed
+
+- **Error Reporting:**
+  - Correct misleading error messages that erroneously referred to live views as "snapshot" views.
+  - Refine error messages and action descriptions when indexing, slicing, or iterating buffers directly instead of through a view.
+  - BlockingCircBuffer: Correct recommendations in `__setitem__` to suggest valid buffer methods (`.write_append()` and `.write_extend()`).
+  - Views: Generalize read-only exception recommendations to apply to all buffer types.
